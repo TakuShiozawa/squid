@@ -27,3 +27,17 @@ Please use our mailing lists for questions, feedback and bug fixes:
         squid-bugs@squid-cache.org	# bugs and fixes
         squid@squid-cache.org		# other feedback
 
+Data Compression Proxy Header
+-------------------------------------------------------------------------
+
+This repository contains a patched version of squid proxy with
+capability of using DCP (Data Compression Proxy) as upstream proxy.
+
+example config:
+
+  cache_peer 74.125.28.211 parent 80 0 default
+  request_header_add Chrome-Proxy "%dcp_auth" all
+
+This patched version will expand macro %dcp_auth to a proper
+Chrome-Proxy value As in
+https://github.com/cnbeining/datacompressionproxy/blob/master/background.js#L10-L18
