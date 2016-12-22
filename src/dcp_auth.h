@@ -11,10 +11,6 @@
 
 #include "hash.h"
 #include "SquidString.h"
-#define DCP_BUILD "2214"
-#define DCP_PATCH "115"
-#define DCP_PLATFORM "win"
-#define DCP_AUTH_VALUE "ac4500dd3b7579186c1b0620614fdb1f7d61f944"
 
 void dcp_auth_calulate(String &);
 

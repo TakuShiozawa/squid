@@ -178,7 +178,8 @@ static TokenTableEntry TokenTableIcap[] = {
     {"tio", LFT_ICAP_IO_TIME},
     {"to",  LFT_ICAP_OUTCOME},
     {"Hs",  LFT_ICAP_STATUS_CODE},
-
+    {"dcp_auth", LFT_DCP_AUTH},
+    
     {NULL, LFT_NONE}           /* this must be last */
 };
 #endif

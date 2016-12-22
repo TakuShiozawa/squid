@@ -9276,4 +9276,36 @@ DOC_START
 	See also: workers
 DOC_END
 
+NAME: dcp_chrome_build
+TYPE: int
+DEFAULT: 2214
+LOC: Config.dcp_chrome_build
+DOC_START
+	chrome build number for dcp
+DOC_END
+
+NAME: dcp_chrome_patch
+TYPE: int
+DEFAULT: 115
+LOC: Config.dcp_chrome_patch
+DOC_START
+	chrome patch number for Data Compression Proxy
+DOC_END
+
+NAME: dcp_chrome_platform
+TYPE: string
+DEFAULT: win
+LOC: Config.dcp_chrome_platform
+DOC_START
+	chrome platform for Data Compression Proxy
+DOC_END
+
+NAME: dcp_auth_value
+TYPE: string
+DEFAULT: ac4500dd3b7579186c1b0620614fdb1f7d61f944
+LOC: Config.dcp_auth_value
+DOC_START
+	Data Compression Proxy Auth Value
+DOC_END
+
 EOF
