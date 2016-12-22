@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,7 +13,6 @@
 #include "acl/Checklist.h"
 #include "acl/forward.h"
 #include "base/CbcPointer.h"
-#include "err_type.h"
 #include "ip/Address.h"
 #if USE_AUTH
 #include "auth/UserRequest.h"
@@ -29,12 +28,9 @@ class HttpReply;
 
 /** \ingroup ACLAPI
     ACLChecklist filled with specific data, representing Squid and transaction
-    state for access checks along with some data-specific checking methods
- */
+    state for access checks along with some data-specific checking methods */
 class ACLFilledChecklist: public ACLChecklist
 {
-    CBDATA_CLASS(ACLFilledChecklist);
-
 public:
     ACLFilledChecklist();
     ACLFilledChecklist(const acl_access *, HttpRequest *, const char *ident);
@@ -62,14 +58,12 @@ public:
     // ACLChecklist API
     virtual bool hasRequest() const { return request != NULL; }
     virtual bool hasReply() const { return reply != NULL; }
-    virtual bool hasAle() const { return al != NULL; }
-    virtual void syncAle() const;
 
 public:
     Ip::Address src_addr;
     Ip::Address dst_addr;
     Ip::Address my_addr;
-    SBuf dst_peer_name;
+    CachePeer *dst_peer;
     char *dst_rdns;
 
     HttpRequest *request;
@@ -85,16 +79,14 @@ public:
 
 #if USE_OPENSSL
     /// SSL [certificate validation] errors, in undefined order
-    Ssl::CertErrors *sslErrors;
+    const Ssl::CertErrors *sslErrors;
     /// The peer certificate
-    Security::CertPointer serverCert;
+    Ssl::X509_Pointer serverCert;
 #endif
 
-    AccessLogEntry::Pointer al; ///< info for the future access.log, and external ACL
+    AccessLogEntry::Pointer al; ///< info for the future access.log entry
 
     ExternalACLEntryPointer extacl_entry;
-
-    err_type requestErrorType;
 
 private:
     ConnStateData * conn_;          /**< hack for ident and NTLM */
@@ -105,6 +97,8 @@ private:
     ACLFilledChecklist(const ACLFilledChecklist &);
     /// not implemented; will cause link failures if used
     ACLFilledChecklist &operator=(const ACLFilledChecklist &);
+
+    CBDATA_CLASS2(ACLFilledChecklist);
 };
 
 /// convenience and safety wrapper for dynamic_cast<ACLFilledChecklist*>

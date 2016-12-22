@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,11 +10,11 @@
 #define SQUID_HTTPREQUEST_H
 
 #include "base/CbcPointer.h"
-#include "dns/forward.h"
+#include "Debug.h"
 #include "err_type.h"
 #include "HierarchyLogEntry.h"
-#include "http/RequestMethod.h"
 #include "HttpMsg.h"
+#include "HttpRequestMethod.h"
 #include "Notes.h"
 #include "RequestFlags.h"
 #include "URL.h"
@@ -36,17 +36,18 @@
 class ConnStateData;
 
 /*  Http Request */
-void httpRequestPack(void *obj, Packable *p);
+void httpRequestPack(void *obj, Packer *p);
 
 class HttpHdrRange;
+class DnsLookupDetails;
 
 class HttpRequest: public HttpMsg
 {
-    MEMPROXY_CLASS(HttpRequest);
 
 public:
     typedef RefCount<HttpRequest> Pointer;
 
+    MEMPROXY_CLASS(HttpRequest);
     HttpRequest();
     HttpRequest(const HttpRequestMethod& aMethod, AnyP::ProtocolType aProtocol, const char *aUrlpath);
     ~HttpRequest();
@@ -66,6 +67,26 @@ public:
     /// whether the client is likely to be able to handle a 1xx reply
     bool canHandle1xx() const;
 
+    /* Now that we care what host contains it is better off being protected. */
+    /* HACK: These two methods are only inline to get around Makefile dependancies */
+    /*      caused by HttpRequest being used in places it really shouldn't.        */
+    /*      ideally they would be methods of URL instead. */
+    inline void SetHost(const char *src) {
+        host_addr.setEmpty();
+        host_addr = src;
+        if (host_addr.isAnyAddr()) {
+            xstrncpy(host, src, SQUIDHOSTNAMELEN);
+            host_is_numeric = 0;
+        } else {
+            host_addr.toHostStr(host, SQUIDHOSTNAMELEN);
+            debugs(23, 3, "HttpRequest::SetHost() given IP: " << host_addr);
+            host_is_numeric = 1;
+        }
+        safe_free(canonical); // force its re-build
+    };
+    inline const char* GetHost(void) const { return host; };
+    inline int GetHostIsNumeric(void) const { return host_is_numeric; };
+
 #if USE_ADAPTATION
     /// Returns possibly nil history, creating it if adapt. logging is enabled
     Adaptation::History::Pointer adaptLogHistory() const;
@@ -79,7 +100,7 @@ public:
     Adaptation::Icap::History::Pointer icapHistory() const;
 #endif
 
-    void recordLookup(const Dns::LookupDetails &detail);
+    void recordLookup(const DnsLookupDetails &detail);
 
     /// sets error detail if no earlier detail was available
     void detailError(err_type aType, int aDetail);
@@ -93,9 +114,16 @@ protected:
 
 public:
     HttpRequestMethod method;
-    URL url; ///< the request URI
+
+    // TODO expand to include all URI parts
+    URL url; ///< the request URI (scheme only)
+
+    char login[MAX_LOGIN_SZ];
 
 private:
+    char host[SQUIDHOSTNAMELEN];
+    int host_is_numeric;
+
 #if USE_ADAPTATION
     mutable Adaptation::History::Pointer adaptHistory_; ///< per-HTTP transaction info
 #endif
@@ -104,12 +132,15 @@ private:
 #endif
 
 public:
+    Ip::Address host_addr;
 #if USE_AUTH
     Auth::UserRequest::Pointer auth_user_request;
 #endif
+    unsigned short port;
 
-    /// RFC 7230 section 5.5 - Effective Request URI
-    const SBuf &effectiveRequestUri() const;
+    String urlpath;
+
+    char *canonical;
 
     /**
      * If defined, store_id_program mapped the request URL to this ID.
@@ -148,7 +179,8 @@ public:
 
     time_t lastmod;     /* Used on refreshes */
 
-    const char *vary_headers;   /* Used when varying entities are detected. Changes how the store key is calculated */
+    /// The variant second-stage cache key. Generated from Vary header pattern for this request.
+    SBuf vary_headers;
 
     char *peer_domain;      /* Configured peer forceddomain */
 
@@ -173,25 +205,24 @@ public:
     /// A strong etag of the cached entry. Used for refreshing that entry.
     String etag;
 
-    /// whether we have responded with HTTP 100 or FTP 150 already
-    bool forcedBodyContinuation;
-
 public:
     bool multipartRangeRequest() const;
 
     bool parseFirstLine(const char *start, const char *end);
 
+    int parseHeader(const char *parse_start, int len);
+
     virtual bool expectingBody(const HttpRequestMethod& unused, int64_t&) const;
 
     bool bodyNibbled() const; // the request has a [partially] consumed body
 
-    int prefixLen() const;
+    int prefixLen();
 
     void swapOut(StoreEntry * e);
 
-    void pack(Packable * p);
+    void pack(Packer * p);
 
-    static void httpRequestPack(void *obj, Packable *p);
+    static void httpRequestPack(void *obj, Packer *p);
 
     static HttpRequest * CreateFromUrlAndMethod(char * url, const HttpRequestMethod& method);
 
@@ -202,9 +233,10 @@ public:
     /**
      * Returns the current StoreID for the request as a nul-terminated char*.
      * Always returns the current id for the request
-     * (either the effective request URI or modified ID by the helper).
+     * (either the request canonical url or modified ID by the helper).
+     * Does not return NULL.
      */
-    const SBuf storeId();
+    const char *storeId();
 
     /**
      * The client connection manager, if known;
@@ -218,17 +250,21 @@ public:
     int64_t getRangeOffsetLimit(); /* the result of this function gets cached in rangeOffsetLimit */
 
 private:
+    const char *packableURI(bool full_uri) const;
+
     mutable int64_t rangeOffsetLimit;  /* caches the result of getRangeOffsetLimit */
 
 protected:
-    virtual void packFirstLineInto(Packable * p, bool full_uri) const;
+    virtual void packFirstLineInto(Packer * p, bool full_uri) const;
 
-    virtual bool sanityCheckStartLine(const char *buf, const size_t hdr_len, Http::StatusCode *error);
+    virtual bool sanityCheckStartLine(MemBuf *buf, const size_t hdr_len, Http::StatusCode *error);
 
     virtual void hdrCacheInit();
 
     virtual bool inheritProperties(const HttpMsg *aMsg);
 };
+
+MEMPROXY_CLASS_INLINE(HttpRequest);
 
 #endif /* SQUID_HTTPREQUEST_H */
 

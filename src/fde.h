@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,25 +12,14 @@
 #include "comm.h"
 #include "defines.h"
 #include "ip/Address.h"
-#include "ip/forward.h"
-#include "security/forward.h"
-#include "typedefs.h" //DRCB, DWCB
+
+#if HAVE_OPENSSL_SSL_H
+#include <openssl/ssl.h>
+#endif
 
 #if USE_DELAY_POOLS
 class ClientInfo;
 #endif
-
-/**
- * READ_HANDLER functions return < 0 if, and only if, they fail with an error.
- * On error, they must pass back an error code in 'errno'.
- */
-typedef int READ_HANDLER(int, char *, int);
-
-/**
- * WRITE_HANDLER functions return < 0 if, and only if, they fail with an error.
- * On error, they must pass back an error code in 'errno'.
- */
-typedef int WRITE_HANDLER(int, const char *, int);
 
 class dwrite_q;
 class _fde_disk
@@ -117,10 +106,13 @@ public:
     void *lifetime_data;
     AsyncCall::Pointer closeHandler;
     AsyncCall::Pointer halfClosedReader; /// read handler for half-closed fds
+    CommWriteStateData *wstate;         /* State data for comm_write */
     READ_HANDLER *read_method;
     WRITE_HANDLER *write_method;
-    Security::SessionPointer ssl;
-    Security::ContextPtr dynamicSslContext; ///< cached and then freed when fd is closed
+#if USE_OPENSSL
+    SSL *ssl;
+    SSL_CTX *dynamicSslContext; ///< cached and then freed when fd is closed
+#endif
 #if _SQUID_WINDOWS_
     struct {
         long handle;
@@ -166,10 +158,13 @@ private:
         lifetime_data = NULL;
         closeHandler = NULL;
         halfClosedReader = NULL;
+        wstate = NULL;
         read_method = NULL;
         write_method = NULL;
+#if USE_OPENSSL
         ssl = NULL;
         dynamicSslContext = NULL;
+#endif
 #if _SQUID_WINDOWS_
         win32.handle = (long)NULL;
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,15 +12,10 @@
 #define SQUID_FQDNCACHE_H_
 
 #include "ip/Address.h"
+#include "typedefs.h"
 
 class StoreEntry;
 class wordlist;
-namespace Dns
-{
-class LookupDetails;
-}
-
-typedef void FQDNH(const char *, const Dns::LookupDetails &details, void *);
 
 void fqdncache_init(void);
 void fqdnStats(StoreEntry *);

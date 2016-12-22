@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -80,28 +80,6 @@ SBufContainerJoin(const Container &items, const SBuf& separator)
         rv.append(separator).append(*i);
     return rv;
 }
-
-namespace std {
-/// default hash functor to support std::unordered_map<SBuf,*>
-template <>
-struct hash<SBuf>
-{
-    size_t operator()(const SBuf &) const noexcept;
-};
-}
-
-/** hash functor for SBufs, meant so support case-insensitive std::unordered_map
- *
- * Typical use:
- * \code
- * auto m = std::unordered_map<SBuf, ValueType, CaseInsensitiveSBufHash>();
- * \endcode
- */
-class CaseInsensitiveSBufHash
-{
-public:
-    std::size_t operator()(const SBuf &) const noexcept;
-};
 
 #endif /* SQUID_SBUFALGOS_H_ */
 

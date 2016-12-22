@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -33,8 +33,8 @@ libstate_la_SOURCES = \
 	Strategised.h \
 	FilledChecklist.cc \
 	FilledChecklist.h \
-	Address.h \
-	Address.cc
+	AclAddress.h \
+	AclAddress.cc
 
 ## data-specific ACLs
 libacls_la_SOURCES = \
@@ -116,10 +116,6 @@ libacls_la_SOURCES = \
 	SourceDomain.h \
 	SourceIp.cc \
 	SourceIp.h \
-	SquidError.h \
-	SquidError.cc \
-	SquidErrorData.cc \
-	SquidErrorData.h \
 	Tag.cc \
 	Tag.h \
 	Url.cc \
@@ -136,7 +132,6 @@ libacls_la_SOURCES = \
 	AclDenyInfoList.h \
 	Gadgets.cc \
 	Gadgets.h \
-	AclSizeLimit.cc \
 	AclSizeLimit.h
 
 ## Add conditional sources

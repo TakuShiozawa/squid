@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -32,8 +32,6 @@ namespace Ecap
 class XactionRep : public Adaptation::Initiate, public libecap::host::Xaction,
     public BodyConsumer, public BodyProducer
 {
-    CBDATA_CLASS(XactionRep);
-
 public:
     XactionRep(HttpMsg *virginHeader, HttpRequest *virginCause, AccessLogEntry::Pointer &alp, const Adaptation::ServicePointer &service);
     virtual ~XactionRep();
@@ -71,7 +69,7 @@ public:
     virtual void noteBodyProductionEnded(RefCount<BodyPipe> bp);
     virtual void noteBodyProducerAborted(RefCount<BodyPipe> bp);
 
-    // Initiate API
+    //  Initiate API
     virtual void noteInitiatorAborted();
 
     // AsyncJob API (via Initiate)
@@ -123,6 +121,8 @@ private:
     bool abProductionFinished; // whether adapter has finished producing ab
     bool abProductionAtEnd;    // whether adapter produced a complete ab
     AccessLogEntry::Pointer al; ///< Master transaction AccessLogEntry
+
+    CBDATA_CLASS2(XactionRep);
 };
 
 } // namespace Ecap

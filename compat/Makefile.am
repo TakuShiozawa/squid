@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -26,6 +26,7 @@ libcompat_squid_la_SOURCES = \
 	cppunit.h \
 	debug.cc \
 	debug.h \
+	drand48.h \
 	eui64_aton.h \
 	eui64_aton.c \
 	fdsetsize.h \

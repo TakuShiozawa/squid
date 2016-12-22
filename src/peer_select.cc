@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,7 +13,7 @@
 #include "CachePeer.h"
 #include "carp.h"
 #include "client_side.h"
-#include "dns/LookupDetails.h"
+#include "DnsLookupDetails.h"
 #include "errorpage.h"
 #include "event.h"
 #include "FwdState.h"
@@ -25,6 +25,7 @@
 #include "ICP.h"
 #include "ip/tools.h"
 #include "ipcache.h"
+#include "Mem.h"
 #include "neighbors.h"
 #include "peer_sourcehash.h"
 #include "peer_userhash.h"
@@ -61,7 +62,7 @@ static void peerGetSomeParent(ps_state *);
 static void peerGetAllParents(ps_state *);
 static void peerAddFwdServer(FwdServer **, CachePeer *, hier_code);
 static void peerSelectPinned(ps_state * ps);
-static void peerSelectDnsResults(const ipcache_addrs *ia, const Dns::LookupDetails &details, void *data);
+static void peerSelectDnsResults(const ipcache_addrs *ia, const DnsLookupDetails &details, void *data);
 
 CBDATA_CLASS_INIT(ps_state);
 
@@ -70,7 +71,7 @@ ps_state::~ps_state()
     while (servers) {
         FwdServer *next = servers->next;
         cbdataReferenceDone(servers->_peer);
-        memFree(servers, MEM_FWD_SERVER);
+        delete servers;
         servers = next;
     }
 
@@ -245,7 +246,7 @@ peerSelectDnsPaths(ps_state *psstate)
         // clear the used fs and continue
         psstate->servers = fs->next;
         cbdataReferenceDone(fs->_peer);
-        memFree(fs, MEM_FWD_SERVER);
+        delete fs;
         peerSelectDnsPaths(psstate);
         return;
     }
@@ -253,7 +254,7 @@ peerSelectDnsPaths(ps_state *psstate)
     // convert the list of FwdServer destinations into destinations IP addresses
     if (fs && psstate->paths->size() < (unsigned int)Config.forward_max_tries) {
         // send the next one off for DNS lookup.
-        const char *host = fs->_peer ? fs->_peer->host : psstate->request->url.host();
+        const char *host = fs->_peer ? fs->_peer->host : psstate->request->GetHost();
         debugs(44, 2, "Find IP destination for: " << psstate->url() << "' via " << host);
         ipcache_nbgethostbyname(host, peerSelectDnsResults, psstate);
         return;
@@ -267,7 +268,7 @@ peerSelectDnsPaths(ps_state *psstate)
         while (fs) {
             psstate->servers = fs->next;
             cbdataReferenceDone(fs->_peer);
-            memFree(fs, MEM_FWD_SERVER);
+            delete fs;
             fs = psstate->servers;
         }
     }
@@ -306,7 +307,7 @@ peerSelectDnsPaths(ps_state *psstate)
 }
 
 static void
-peerSelectDnsResults(const ipcache_addrs *ia, const Dns::LookupDetails &details, void *data)
+peerSelectDnsResults(const ipcache_addrs *ia, const DnsLookupDetails &details, void *data)
 {
     ps_state *psstate = (ps_state *)data;
 
@@ -347,12 +348,15 @@ peerSelectDnsResults(const ipcache_addrs *ia, const Dns::LookupDetails &details,
 
             // when IPv6 is disabled we cannot use it
             if (!Ip::EnableIpv6 && p->remote.isIPv6()) {
-                const char *host = (fs->_peer ? fs->_peer->host : psstate->request->url.host());
+                const char *host = (fs->_peer ? fs->_peer->host : psstate->request->GetHost());
                 ipcacheMarkBadAddr(host, p->remote);
                 continue;
             }
 
-            p->remote.port(fs->_peer ? fs->_peer->http_port : psstate->request->url.port());
+            if (fs->_peer)
+                p->remote.port(fs->_peer->http_port);
+            else
+                p->remote.port(psstate->request->port);
             p->peerType = fs->code;
             p->setPeer(fs->_peer);
 
@@ -361,7 +365,7 @@ peerSelectDnsResults(const ipcache_addrs *ia, const Dns::LookupDetails &details,
             psstate->paths->push_back(p);
         }
     } else {
-        debugs(44, 3, "Unknown host: " << (fs->_peer ? fs->_peer->host : psstate->request->url.host()));
+        debugs(44, 3, HERE << "Unknown host: " << (fs->_peer ? fs->_peer->host : psstate->request->GetHost()));
         // discard any previous error.
         delete psstate->lastError;
         psstate->lastError = NULL;
@@ -373,7 +377,7 @@ peerSelectDnsResults(const ipcache_addrs *ia, const Dns::LookupDetails &details,
 
     psstate->servers = fs->next;
     cbdataReferenceDone(fs->_peer);
-    memFree(fs, MEM_FWD_SERVER);
+    delete fs;
 
     // see if more paths can be found
     peerSelectDnsPaths(psstate);
@@ -392,14 +396,15 @@ peerCheckNetdbDirect(ps_state * psstate)
 
     /* base lookup on RTT and Hops if ICMP NetDB is enabled. */
 
-    myrtt = netdbHostRtt(psstate->request->url.host());
-    debugs(44, 3, "MY RTT = " << myrtt << " msec");
-    debugs(44, 3, "minimum_direct_rtt = " << Config.minDirectRtt << " msec");
+    myrtt = netdbHostRtt(psstate->request->GetHost());
+
+    debugs(44, 3, "peerCheckNetdbDirect: MY RTT = " << myrtt << " msec");
+    debugs(44, 3, "peerCheckNetdbDirect: minimum_direct_rtt = " << Config.minDirectRtt << " msec");
 
     if (myrtt && myrtt <= Config.minDirectRtt)
         return 1;
 
-    myhops = netdbHostHops(psstate->request->url.host());
+    myhops = netdbHostHops(psstate->request->GetHost());
 
     debugs(44, 3, "peerCheckNetdbDirect: MY hops = " << myhops);
     debugs(44, 3, "peerCheckNetdbDirect: minimum_direct_hops = " << Config.minDirectHops);
@@ -433,7 +438,7 @@ peerSelectFoo(ps_state * ps)
 
     StoreEntry *entry = ps->entry;
     HttpRequest *request = ps->request;
-    debugs(44, 3, request->method << ' ' << request->url.host());
+    debugs(44, 3, request->method << ' ' << request->GetHost());
 
     /** If we don't know whether DIRECT is permitted ... */
     if (ps->direct == DIRECT_UNKNOWN) {
@@ -570,7 +575,7 @@ peerGetSomeNeighbor(ps_state * ps)
 
 #if USE_CACHE_DIGESTS
     if ((p = neighborsDigestSelect(request))) {
-        if (neighborType(p, request->url) == PEER_PARENT)
+        if (neighborType(p, request) == PEER_PARENT)
             code = CD_PARENT_HIT;
         else
             code = CD_SIBLING_HIT;
@@ -630,7 +635,7 @@ peerGetSomeNeighborReplies(ps_state * ps)
 
     if (peerCheckNetdbDirect(ps)) {
         code = CLOSEST_DIRECT;
-        debugs(44, 3, hier_code_str[code] << "/" << request->url.host());
+        debugs(44, 3, "peerSelect: " << hier_code_str[code] << "/" << request->GetHost());
         peerAddFwdServer(&ps->servers, NULL, code);
         return;
     }
@@ -647,7 +652,7 @@ peerGetSomeNeighborReplies(ps_state * ps)
         }
     }
     if (p && code != HIER_NONE) {
-        debugs(44, 3, hier_code_str[code] << "/" << p->host);
+        debugs(44, 3, "peerSelect: " << hier_code_str[code] << "/" << p->host);
         peerAddFwdServer(&ps->servers, p, code);
     }
 }
@@ -677,7 +682,7 @@ peerGetSomeParent(ps_state * ps)
     CachePeer *p;
     HttpRequest *request = ps->request;
     hier_code code = HIER_NONE;
-    debugs(44, 3, request->method << ' ' << request->url.host());
+    debugs(44, 3, request->method << ' ' << request->GetHost());
 
     if (ps->direct == DIRECT_YES)
         return;
@@ -720,7 +725,7 @@ peerGetAllParents(ps_state * ps)
          * parents to a request so we have to dig some here..
          */
 
-        if (neighborType(p, request->url) != PEER_PARENT)
+        if (neighborType(p, request) != PEER_PARENT)
             continue;
 
         if (!peerHTTPOkay(p, request))
@@ -748,12 +753,11 @@ peerPingTimeout(void *data)
     StoreEntry *entry = psstate->entry;
 
     if (entry)
-        debugs(44, 3, psstate->url());
+        debugs(44, 3, "peerPingTimeout: '" << psstate->url() << "'" );
 
     if (!cbdataReferenceValid(psstate->callback_data)) {
         /* request aborted */
-        if (entry)
-            entry->ping_status = PING_DONE;
+        entry->ping_status = PING_DONE;
         cbdataReferenceDone(psstate->callback_data);
         delete psstate;
         return;
@@ -768,7 +772,6 @@ void
 peerSelectInit(void)
 {
     memset(&PeerStats, '\0', sizeof(PeerStats));
-    memDataInit(MEM_FWD_SERVER, "FwdServer", sizeof(FwdServer), 0);
 }
 
 static void
@@ -783,7 +786,7 @@ peerIcpParentMiss(CachePeer * p, icp_common_t * header, ps_state * ps)
             int hops = (header->pad >> 16) & 0xFFFF;
 
             if (rtt > 0 && rtt < 0xFFFF)
-                netdbUpdatePeer(ps->request->url, p, rtt, hops);
+                netdbUpdatePeer(ps->request, p, rtt, hops);
 
             if (rtt && (ps->ping.p_rtt == 0 || rtt < ps->ping.p_rtt)) {
                 ps->closest_parent_miss = p->in_addr;
@@ -879,7 +882,7 @@ peerHtcpParentMiss(CachePeer * p, HtcpReplyData * htcp, ps_state * ps)
         if (htcp->cto.rtt > 0) {
             rtt = (int) htcp->cto.rtt * 1000;
             int hops = (int) htcp->cto.hops * 1000;
-            netdbUpdatePeer(ps->request->url, p, rtt, hops);
+            netdbUpdatePeer(ps->request, p, rtt, hops);
 
             if (rtt && (ps->ping.p_rtt == 0 || rtt < ps->ping.p_rtt)) {
                 ps->closest_parent_miss = p->in_addr;
@@ -930,12 +933,10 @@ peerHandlePingReply(CachePeer * p, peer_t type, AnyP::ProtocolType proto, void *
 static void
 peerAddFwdServer(FwdServer ** FSVR, CachePeer * p, hier_code code)
 {
-    FwdServer *fs = (FwdServer *)memAllocate(MEM_FWD_SERVER);
     debugs(44, 5, "peerAddFwdServer: adding " <<
            (p ? p->host : "DIRECT")  << " " <<
            hier_code_str[code]  );
-    fs->_peer = cbdataReference(p);
-    fs->code = code;
+    FwdServer *fs = new FwdServer(p, code);
 
     while (*FSVR)
         FSVR = &(*FSVR)->next;
@@ -962,17 +963,16 @@ ps_state::ps_state() : request (NULL),
     ; // no local defaults.
 }
 
-const SBuf
+const char *
 ps_state::url() const
 {
     if (entry)
-        return SBuf(entry->url());
+        return entry->url();
 
     if (request)
-        return request->effectiveRequestUri();
+        return urlCanonical(request);
 
-    static const SBuf noUrl("[no URL]");
-    return noUrl;
+    return "[no URL]";
 }
 
 ping_data::ping_data() :

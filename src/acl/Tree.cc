@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -74,13 +74,9 @@ Acl::Tree::treeDump(const char *prefix, const ActionToString &convert) const
             ++action;
         }
 
-#if __cplusplus >= 201103L
-        text.splice(text.end(), (*node)->dump());
-#else
         // temp is needed until c++11 move constructor
         SBufList temp = (*node)->dump();
         text.splice(text.end(), temp);
-#endif
         text.push_back(SBuf("\n"));
     }
     return text;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -181,6 +181,7 @@ Eui::Eui48::lookup(const Ip::Address &c)
         close(tmpSocket);
 
         if (arpReq.arp_ha.sa_family != ARPHRD_ETHER) {
+            debugs(28, 4, "id=" << (void*)this << " ... not an Ethernet interface: " << arpReq.arp_ha.sa_data);
             clear();
             return false;
         }
@@ -374,7 +375,11 @@ Eui::Eui48::lookup(const Ip::Address &c)
 
     mib[4] = NET_RT_FLAGS;
 
+#if defined(RTF_LLDATA)
+    mib[5] = RTF_LLDATA;
+#else
     mib[5] = RTF_LLINFO;
+#endif
 
     if (sysctl(mib, 6, NULL, &needed, NULL, 0) < 0) {
         debugs(28, DBG_CRITICAL, "Can't estimate ARP table size!");

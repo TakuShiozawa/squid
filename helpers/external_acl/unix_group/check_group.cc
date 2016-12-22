@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -140,8 +140,6 @@ usage(char *program)
             "-p			Verify primary user group as well\n");
     fprintf(stderr,
             "-s			Strip NT domain from usernames\n");
-    fprintf(stderr,
-            "-r			Strip Kerberos realm from usernames\n");
 }
 
 int
@@ -150,22 +148,19 @@ main(int argc, char *argv[])
     char *user, *suser, *p;
     char buf[HELPER_INPUT_BUFFER];
     char **grents = NULL;
-    int check_pw = 0, ch, ngroups = 0, i, j = 0, strip_dm = 0, strip_rm = 0;
+    int check_pw = 0, ch, ngroups = 0, i, j = 0, strip_dm = 0;
 
     /* make standard output line buffered */
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     /* get user options */
-    while ((ch = getopt(argc, argv, "dsrpg:")) != -1) {
+    while ((ch = getopt(argc, argv, "dspg:")) != -1) {
         switch (ch) {
         case 'd':
             debug_enabled = 1;
             break;
         case 's':
             strip_dm = 1;
-            break;
-        case 'r':
-            strip_rm = 1;
             break;
         case 'p':
             check_pw = 1;
@@ -217,10 +212,6 @@ main(int argc, char *argv[])
                 suser = strchr(user, '\\');
                 if (!suser) suser = strchr(user, '/');
                 if (suser && suser[1]) user = suser + 1;
-            }
-            if (strip_rm) {
-                suser = strchr(user, '@');
-                if (suser) *suser = '\0';
             }
             /* check groups supplied by Squid */
             while ((p = strtok(NULL, " ")) != NULL) {

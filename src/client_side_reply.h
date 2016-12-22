@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,7 +21,6 @@ class ErrorState;
 
 class clientReplyContext : public RefCountable, public StoreClient
 {
-    CBDATA_CLASS(clientReplyContext);
 
 public:
     static STCB CacheHit;
@@ -83,17 +82,17 @@ public:
     int old_reqsize;        /* ... again, for the buffer */
     size_t reqsize;
     size_t reqofs;
-    char tempbuf[HTTP_REQBUF_SZ];   ///< a temporary buffer if we need working storage
+    char tempbuf[HTTP_REQBUF_SZ];   /* a temporary buffer if we need working storage */
 #if USE_CACHE_DIGESTS
 
     const char *lookup_type;    /* temporary hack: storeGet() result: HIT/MISS/NONE */
 #endif
 
-    struct Flags {
-        Flags() : storelogiccomplete(0), complete(0), headersSent(false) {}
+    struct {
 
         unsigned storelogiccomplete:1;
-        unsigned complete:1;        ///< we have read all we can from upstream
+
+        unsigned complete:1;        /* we have read all we can from upstream */
         bool headersSent;
     } flags;
     clientStreamNode *ourNode;  /* This will go away if/when this file gets refactored some more */
@@ -115,7 +114,7 @@ private:
     bool alwaysAllowResponse(Http::StatusCode sline) const;
     int checkTransferDone();
     void processOnlyIfCachedMiss();
-    void processConditional(StoreIOBuffer &result);
+    bool processConditional(StoreIOBuffer &result);
     void cacheHit(StoreIOBuffer result);
     void handleIMSReply(StoreIOBuffer result);
     void sendMoreData(StoreIOBuffer result);
@@ -133,6 +132,16 @@ private:
     StoreEntry *old_entry;
     store_client *old_sc;   /* ... for entry to be validated */
     bool deleting;
+
+    typedef enum {
+        crNone = 0, ///< collapsed revalidation is not allowed for this context
+        crInitiator, ///< we initiated collapsed revalidation request
+        crSlave ///< we collapsed on the existing revalidation request
+    } CollapsedRevalidation;
+
+    CollapsedRevalidation collapsedRevalidation;
+
+    CBDATA_CLASS2(clientReplyContext);
 };
 
 #endif /* SQUID_CLIENTSIDEREPLY_H */

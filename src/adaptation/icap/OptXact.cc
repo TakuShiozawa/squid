@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -54,21 +54,20 @@ void Adaptation::Icap::OptXact::makeRequest(MemBuf &buf)
 {
     const Adaptation::Service &s = service();
     const String uri = s.cfg().uri;
-    buf.appendf("OPTIONS " SQUIDSTRINGPH " ICAP/1.0\r\n", SQUIDSTRINGPRINT(uri));
+    buf.Printf("OPTIONS " SQUIDSTRINGPH " ICAP/1.0\r\n", SQUIDSTRINGPRINT(uri));
     const String host = s.cfg().host;
-    buf.appendf("Host: " SQUIDSTRINGPH ":%d\r\n", SQUIDSTRINGPRINT(host), s.cfg().port);
+    buf.Printf("Host: " SQUIDSTRINGPH ":%d\r\n", SQUIDSTRINGPRINT(host), s.cfg().port);
 
     if (!TheConfig.reuse_connections)
-        buf.append("Connection: close\r\n", 19);
+        buf.Printf("Connection: close\r\n");
 
     if (TheConfig.allow206_enable)
-        buf.append("Allow: 206\r\n", 12);
+        buf.Printf("Allow: 206\r\n");
     buf.append(ICAP::crlf, 2);
 
     // XXX: HttpRequest cannot fully parse ICAP Request-Line
     Http::StatusCode reqStatus;
-    buf.terminate(); // HttpMsg::parse requires terminated buffer
-    Must(icapRequest->parse(buf.content(), buf.contentSize(), true, &reqStatus) > 0);
+    Must(icapRequest->parse(&buf, true, &reqStatus) > 0);
 }
 
 void Adaptation::Icap::OptXact::handleCommWrote(size_t size)
@@ -100,8 +99,9 @@ void Adaptation::Icap::OptXact::handleCommRead(size_t)
 
 bool Adaptation::Icap::OptXact::parseResponse()
 {
-    debugs(93, 5, "have " << readBuf.length() << " bytes to parse" << status());
-    debugs(93, DBG_DATA, "\n" << readBuf);
+    debugs(93, 5, HERE << "have " << readBuf.contentSize() << " bytes to parse" <<
+           status());
+    debugs(93, 5, HERE << "\n" << readBuf.content());
 
     HttpReply::Pointer r(new HttpReply);
     r->protoPrefix = "ICAP/"; // TODO: make an IcapReply class?

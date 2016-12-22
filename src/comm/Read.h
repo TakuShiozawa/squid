@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -31,9 +31,6 @@ bool MonitorsRead(int fd);
 
 /**
  * Perform a read(2) on a connection immediately.
- *
- * If params.size is non-zero will limit size of the read to either
- * the buffer free space or params.size, whichever is smallest.
  *
  * The returned flag is also placed in params.flag.
  *

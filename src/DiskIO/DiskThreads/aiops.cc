@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -18,12 +18,6 @@
 #include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
-
-/*
- * struct stat and squidaio_xstrdup use explicit pool alloc()/freeOne().
- * XXX: convert to MEMPROXY_CLASS() API
- */
-#include "mem/Pool.h"
 
 #include <cerrno>
 #include <csignal>

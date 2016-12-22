@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -14,7 +14,6 @@
 #include "ipc/mem/PageStack.h"
 #include "ipc/StoreMap.h"
 #include "Store.h"
-#include "store/Controlled.h"
 #include <vector>
 
 // StoreEntry restoration info not already stored by Ipc::StoreMap
@@ -29,7 +28,7 @@ typedef Ipc::StoreMap TransientsMap;
 /// Keeps track of store entries being delivered to clients that arrived before
 /// those entries were [fully] cached. This shared table is necessary to sync
 /// the entry-writing worker with entry-reading worker(s).
-class Transients: public Store::Controlled, public Ipc::StoreMapCleaner
+class Transients: public Store, public Ipc::StoreMapCleaner
 {
 public:
     Transients();
@@ -57,21 +56,23 @@ public:
     void disconnect(MemObject &mem_obj);
 
     /* Store API */
-    virtual StoreEntry *get(const cache_key *) override;
-    virtual void create() override {}
-    virtual void init() override;
-    virtual uint64_t maxSize() const override;
-    virtual uint64_t minSize() const override;
-    virtual uint64_t currentSize() const override;
-    virtual uint64_t currentCount() const override;
-    virtual int64_t maxObjectSize() const override;
-    virtual void getStats(StoreInfoStats &stats) const override;
-    virtual void stat(StoreEntry &e) const override;
-    virtual void reference(StoreEntry &e) override;
-    virtual bool dereference(StoreEntry &e) override;
-    virtual void markForUnlink(StoreEntry &e) override;
-    virtual void unlink(StoreEntry &e) override;
-    virtual void maintain() override;
+    virtual int callback();
+    virtual StoreEntry * get(const cache_key *);
+    virtual void get(String const key , STOREGETCLIENT callback, void *cbdata);
+    virtual void init();
+    virtual uint64_t maxSize() const;
+    virtual uint64_t minSize() const;
+    virtual uint64_t currentSize() const;
+    virtual uint64_t currentCount() const;
+    virtual int64_t maxObjectSize() const;
+    virtual void getStats(StoreInfoStats &stats) const;
+    virtual void stat(StoreEntry &) const;
+    virtual StoreSearch *search(String const url, HttpRequest *);
+    virtual void reference(StoreEntry &);
+    virtual bool dereference(StoreEntry &, bool);
+    virtual void markForUnlink(StoreEntry &e);
+    virtual void maintain();
+    virtual bool smpAware() const { return true; }
 
     static int64_t EntryLimit();
 
@@ -82,7 +83,7 @@ protected:
     bool abandonedAt(const sfileno index) const;
 
     // Ipc::StoreMapCleaner API
-    virtual void noteFreeMapSlice(const Ipc::StoreMapSliceId sliceId) override;
+    virtual void noteFreeMapSlice(const Ipc::StoreMapSliceId sliceId);
 
 private:
     /// shared packed info indexed by Store keys, for creating new StoreEntries

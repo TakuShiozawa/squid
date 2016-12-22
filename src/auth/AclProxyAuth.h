@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -29,9 +29,9 @@ private:
 
 class ACLProxyAuth : public ACL
 {
+public:
     MEMPROXY_CLASS(ACLProxyAuth);
 
-public:
     ~ACLProxyAuth();
     ACLProxyAuth(ACLData<char const *> *, char const *);
     ACLProxyAuth(ACLProxyAuth const &);
@@ -59,6 +59,8 @@ private:
     ACLData<char const *> *data;
     char const *type_;
 };
+
+MEMPROXY_CLASS_INLINE(ACLProxyAuth);
 
 #endif /* USE_AUTH */
 #endif /* SQUID_ACLPROXYAUTH_H */

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,12 +9,11 @@
 /* DEBUG: section 47    Store Directory Routines */
 
 #include "squid.h"
-#include "fs_io.h"
+#include "disk.h"
 #include "globals.h"
 #include "RebuildState.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
-#include "store/Disks.h"
 #include "store_key_md5.h"
 #include "store_rebuild.h"
 #include "StoreSwapLogData.h"
@@ -30,24 +29,8 @@
 CBDATA_NAMESPACED_CLASS_INIT(Fs::Ufs,RebuildState);
 
 Fs::Ufs::RebuildState::RebuildState(RefCount<UFSSwapDir> aSwapDir) :
-    sd(aSwapDir),
-    n_read(0),
-    LogParser(NULL),
-    curlvl1(0),
-    curlvl2(0),
-    in_dir(0),
-    done(0),
-    fn(0),
-    entry(NULL),
-    td(NULL),
-    e(NULL),
-    fromLog(true),
-    _done(false),
-    cbdata(NULL)
+    sd (aSwapDir), LogParser(NULL), e(NULL), fromLog(true), _done (false)
 {
-    *fullpath = 0;
-    *fullfilename = 0;
-
     /*
      * If the swap.state file exists in the cache_dir, then
      * we'll use commonUfsDirRebuildFromSwapLog(), otherwise we'll
@@ -91,9 +74,11 @@ void
 Fs::Ufs::RebuildState::RebuildStep(void *data)
 {
     RebuildState *rb = (RebuildState *)data;
-    rb->rebuildStep();
+    if (!reconfiguring)
+        rb->rebuildStep();
 
-    if (!rb->isDone())
+    // delay storeRebuildComplete() when reconfiguring to protect storeCleanup()
+    if (!rb->isDone() || reconfiguring)
         eventAdd("storeRebuild", RebuildStep, rb, 0.01, 1);
     else {
         -- StoreController::store_dirs_rebuilding;
@@ -216,7 +201,7 @@ Fs::Ufs::RebuildState::rebuildFromDirectory()
                                     tmpe.expires,
                                     tmpe.timestamp,
                                     tmpe.lastref,
-                                    tmpe.lastmod,
+                                    tmpe.lastModified(),
                                     tmpe.refcount,  /* refcount */
                                     tmpe.flags,     /* flags */
                                     (int) flags.clean));
@@ -343,10 +328,10 @@ Fs::Ufs::RebuildState::rebuildFromSwapLog()
             currentEntry()->lastref = swapData.timestamp;
             currentEntry()->timestamp = swapData.timestamp;
             currentEntry()->expires = swapData.expires;
-            currentEntry()->lastmod = swapData.lastmod;
+            currentEntry()->lastModified(swapData.lastmod);
             currentEntry()->flags = swapData.flags;
             currentEntry()->refcount += swapData.refcount;
-            sd->dereference(*currentEntry());
+            sd->dereference(*currentEntry(), false);
         } else {
             debug_trap("commonUfsDirRebuildFromSwapLog: bad condition");
             debugs(47, DBG_IMPORTANT, HERE << "bad condition");
@@ -434,7 +419,7 @@ Fs::Ufs::RebuildState::undoAdd()
 }
 
 int
-Fs::Ufs::RebuildState::getNextFile(sfileno * filn_p, int *)
+Fs::Ufs::RebuildState::getNextFile(sfileno * filn_p, int *size)
 {
     int fd = -1;
     int dirs_opened = 0;
@@ -450,7 +435,6 @@ Fs::Ufs::RebuildState::getNextFile(sfileno * filn_p, int *)
         fd = -1;
 
         if (!flags.init) {  /* initialize, open first file */
-            // XXX: 0's should not be needed, constructor inits now
             done = 0;
             curlvl1 = 0;
             curlvl2 = 0;

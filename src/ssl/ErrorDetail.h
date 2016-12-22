@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,7 +12,10 @@
 #include "err_detail_type.h"
 #include "ErrorDetailManager.h"
 #include "HttpRequest.h"
-#include "security/forward.h"
+
+#if HAVE_OPENSSL_SSL_H
+#include <openssl/ssl.h>
+#endif
 
 namespace Ssl
 {
@@ -102,8 +105,8 @@ private:
     mutable String errDetailStr; ///< Caches the error detail message
     ssl_error_t error_no;   ///< The error code
     unsigned long lib_error_no; ///< low-level error returned by OpenSSL ERR_get_error(3SSL)
-    Security::CertPointer peer_cert; ///< A pointer to the peer certificate
-    Security::CertPointer broken_cert; ///< A pointer to the broken certificate (peer or intermediate)
+    X509_Pointer peer_cert; ///< A pointer to the peer certificate
+    X509_Pointer broken_cert; ///< A pointer to the broken certificate (peer or intermediate)
     String errReason; ///< A custom reason for error, else retrieved from OpenSSL.
     mutable ErrorDetailEntry detailEntry;
     HttpRequest::Pointer request;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,6 +12,7 @@
 #if USE_CACHE_DIGESTS
 
 #include "cbdata.h"
+/* for CacheDigestGuessStats */
 #include "StatCounters.h"
 
 class Version
@@ -43,12 +44,7 @@ class store_client;
 
 class DigestFetchState
 {
-    CBDATA_CLASS(DigestFetchState);
-
 public:
-    DigestFetchState(PeerDigest *,HttpRequest *);
-    ~DigestFetchState();
-
     PeerDigest *pd;
     StoreEntry *entry;
     StoreEntry *old_entry;
@@ -56,7 +52,7 @@ public:
     store_client *old_sc;
     HttpRequest *request;
     int offset;
-    int mask_offset;
+    uint32_t mask_offset;
     time_t start_time;
     time_t resp_time;
     time_t expires;
@@ -64,8 +60,9 @@ public:
     struct {
         int msg;
         int bytes;
-    } sent, recv;
+    }
 
+    sent, recv;
     char buf[SM_PAGE_SIZE];
     ssize_t bufofs;
     digest_read_state_t state;
@@ -73,7 +70,6 @@ public:
 
 class PeerDigest
 {
-    CBDATA_CLASS(PeerDigest);
 
 public:
     CachePeer *peer;          /**< pointer back to peer structure, argh */
@@ -105,9 +101,12 @@ public:
 
         struct {
             int msgs;
-            ByteCounter kbytes;
+            kb_t kbytes;
         } sent, recv;
     } stats;
+
+private:
+    CBDATA_CLASS2(PeerDigest);
 };
 
 extern const Version CacheDigestVer;

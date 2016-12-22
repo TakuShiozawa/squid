@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -276,9 +276,6 @@ do
 done
 echo " "
 )| sed s%${ROOT}/src/%%g >${ROOT}/src/tests/Stub.list
-
-# Build the GPERF generated content
-make -C src/http gperf-files
 
 # Run formating
 echo "" >${ROOT}/doc/debug-sections.tmp

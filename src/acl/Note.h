@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,12 +12,10 @@
 #include "acl/Strategised.h"
 #include "acl/Strategy.h"
 
-class ACLNoteData;
-class CharacterSet;
 class HttpRequest;
 
 /// \ingroup ACLAPI
-class ACLNoteStrategy : public ACLStrategy<NotePairs::Entry *>
+class ACLNoteStrategy : public ACLStrategy<HttpRequest *>
 {
 
 public:
@@ -35,7 +33,6 @@ private:
     ACLNoteStrategy() { }
 
     ACLNoteStrategy& operator = (ACLNoteStrategy const &);
-    bool matchNotes(ACLData<MatchType> *, const NotePairs *, const CharacterSet *) const;
 };
 
 /// \ingroup ACLAPI
@@ -44,7 +41,7 @@ class ACLNote
 
 private:
     static ACL::Prototype RegistryProtoype;
-    static ACLStrategised<NotePairs::Entry *> RegistryEntry_;
+    static ACLStrategised<HttpRequest *> RegistryEntry_;
 };
 
 #endif /* SQUID_ACLNOTE_H */

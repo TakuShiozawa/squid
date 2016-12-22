@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -8,7 +8,7 @@
 # requires the linuxdoc tools
 if ENABLE_RELEASE_DOCS
 
-DOC= release-4
+DOC= release-3.5
 
 %.ps: %.sgml
 	linuxdoc -B latex -o ps $(DOC)

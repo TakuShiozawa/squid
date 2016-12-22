@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -105,14 +105,15 @@ HttpHdrRangeSpec::parseInit(const char *field, int flen)
 }
 
 void
-HttpHdrRangeSpec::packInto(Packable * p) const
+HttpHdrRangeSpec::packInto(Packer * packer) const
 {
     if (!known_spec(offset))    /* suffix */
-        p->appendf("-%" PRId64, length);
+        packerPrintf(packer, "-%" PRId64,  length);
     else if (!known_spec(length))       /* trailer */
-        p->appendf("%" PRId64 "-", offset);
+        packerPrintf(packer, "%" PRId64 "-", offset);
     else            /* range */
-        p->appendf("%" PRId64 "-%" PRId64, offset, offset + length - 1);
+        packerPrintf(packer, "%" PRId64 "-%" PRId64,
+                     offset, offset + length - 1);
 }
 
 void
@@ -302,13 +303,13 @@ HttpHdrRange::end() const
 }
 
 void
-HttpHdrRange::packInto(Packable * packer) const
+HttpHdrRange::packInto(Packer * packer) const
 {
     const_iterator pos = begin();
 
     while (pos != end()) {
         if (pos != begin())
-            packer->append(",", 1);
+            packerAppend(packer, ",", 1);
 
         (*pos)->packInto(packer);
 

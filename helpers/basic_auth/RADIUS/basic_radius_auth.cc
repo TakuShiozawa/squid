@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -63,7 +63,6 @@
 #include <cerrno>
 #include <cstring>
 #include <ctime>
-#include <random>
 #if HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
 #endif
@@ -163,7 +162,7 @@ md5_calc(uint8_t out[16], void *in, size_t len)
  *    Receive and verify the result.
  */
 static int
-result_recv(char *buffer, int length)
+result_recv(uint32_t host, unsigned short udp_port, char *buffer, int length)
 {
     AUTH_HDR *auth;
     int totallen;
@@ -206,11 +205,16 @@ result_recv(char *buffer, int length)
 static void
 random_vector(char *aVector)
 {
-    static std::mt19937 mt(time(0));
-    static xuniform_int_distribution<uint8_t> dist;
+    int randno;
+    int i;
 
-    for (int i = 0; i < AUTH_VECTOR_LEN; ++i)
-        aVector[i] = static_cast<char>(dist(mt) & 0xFF);
+    srand((time(0) ^ rand()) + rand());
+    for (i = 0; i < AUTH_VECTOR_LEN;) {
+        randno = rand();
+        memcpy(aVector, &randno, sizeof(int));
+        aVector += sizeof(int);
+        i += sizeof(int);
+    }
 }
 
 /* read the config file
@@ -445,7 +449,7 @@ authenticate(int socket_fd, const char *username, const char *passwd)
             if (len < 0)
                 continue;
 
-            rc = result_recv(recv_buffer, len);
+            rc = result_recv(saremote.sin_addr.s_addr, saremote.sin_port, recv_buffer, len);
             if (rc == 0) {
                 SEND_OK("");
                 return;

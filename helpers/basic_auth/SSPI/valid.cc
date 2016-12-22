@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -123,6 +123,13 @@ Valid_Group(char *UserName, char *Group)
         NetApiBufferFree(pBuf);
     return result;
 }
+
+/* Valid_User return codes -
+   0 - User authenticated successfully.
+   1 - Server error.
+   2 - Group membership error.
+   3 - Logon error; Incorrect password or username given.
+*/
 
 int
 Valid_User(char *UserName, char *Password, char *Group)

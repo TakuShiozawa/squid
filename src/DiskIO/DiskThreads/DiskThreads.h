@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -16,7 +16,7 @@
 #define __DISKTHREADS_H__
 
 #include "dlink.h"
-#include "mem/forward.h"
+#include "typedefs.h"
 
 /* this non-standard-conformant include is needed in order to have stat(2) and struct stat
    properly defined on some systems (e.g. OpenBSD 5.4) */
@@ -56,9 +56,7 @@ typedef enum _squidaio_request_type squidaio_request_type;
 
 typedef void AIOCB(int fd, void *cbdata, const char *buf, int aio_return, int aio_errno);
 
-class squidaio_result_t {
-public:
-    squidaio_result_t() : aio_return(0), aio_errno(0), result_type(_AIO_OP_NONE), _data(nullptr), data(nullptr) {}
+struct squidaio_result_t {
     int aio_return;
     int aio_errno;
     enum _squidaio_request_type result_type;
@@ -66,10 +64,8 @@ public:
     void *data;         /* Available to the caller */
 };
 
-class squidaio_ctrl_t {
-    MEMPROXY_CLASS(squidaio_ctrl_t);
-public:
-    squidaio_ctrl_t() : next(nullptr), fd(0), operation(0), done_handler(nullptr), done_handler_data(nullptr), len(0), bufp(0), free_func(nullptr) {}
+struct squidaio_ctrl_t {
+
     struct squidaio_ctrl_t *next;
     int fd;
     int operation;

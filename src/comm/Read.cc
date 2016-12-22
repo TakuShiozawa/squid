@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -82,9 +82,7 @@ Comm::ReadNow(CommIoCbParams &params, SBuf &buf)
 {
     /* Attempt a read */
     ++ statCounter.syscalls.sock.reads;
-    SBuf::size_type sz = buf.spaceSize();
-    if (params.size > 0 && params.size < sz)
-        sz = params.size;
+    const SBuf::size_type sz = buf.spaceSize();
     char *inbuf = buf.rawSpace(sz);
     errno = 0;
     const int retval = FD_READ_METHOD(params.conn->fd, inbuf, sz);

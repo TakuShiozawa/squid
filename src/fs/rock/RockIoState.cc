@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -18,6 +18,7 @@
 #include "fs/rock/RockIoState.h"
 #include "fs/rock/RockSwapDir.h"
 #include "globals.h"
+#include "Mem.h"
 #include "MemObject.h"
 #include "Parsing.h"
 #include "Transients.h"
@@ -26,8 +27,7 @@ Rock::IoState::IoState(Rock::SwapDir::Pointer &aDir,
                        StoreEntry *anEntry,
                        StoreIOState::STFNCB *cbFile,
                        StoreIOState::STIOCB *cbIo,
-                       void *data) :
-    StoreIOState(cbFile, cbIo, data),
+                       void *data):
     readableAnchor_(NULL),
     writeableAnchor_(NULL),
     sidCurrent(-1),
@@ -39,6 +39,9 @@ Rock::IoState::IoState(Rock::SwapDir::Pointer &aDir,
     e = anEntry;
     e->lock("rock I/O");
     // anchor, swap_filen, and swap_dirn are set by the caller
+    file_callback = cbFile;
+    callback = cbIo;
+    callback_data = cbdataReference(data);
     ++store_open_disk_fd; // TODO: use a dedicated counter?
     //theFile is set by SwapDir because it depends on DiskIOStrategy
 }
@@ -372,13 +375,13 @@ public:
         cbdataReferenceDone(callback_data); // may be nil already
     }
 
-    void dial(AsyncCall &) {
+    void dial(AsyncCall &call) {
         void *cbd;
         if (cbdataReferenceValidDone(callback_data, &cbd) && callback)
             callback(cbd, errflag, sio.getRaw());
     }
 
-    bool canDial(AsyncCall &) const {
+    bool canDial(AsyncCall &call) const {
         return cbdataReferenceValid(callback_data) && callback;
     }
 
@@ -387,7 +390,7 @@ public:
     }
 
 private:
-    StoreIOStateCb &operator =(const StoreIOStateCb &); // not defined
+    StoreIOStateCb &operator =(const StoreIOStateCb &cb); // not defined
 
     StoreIOState::STIOCB *callback;
     void *callback_data;

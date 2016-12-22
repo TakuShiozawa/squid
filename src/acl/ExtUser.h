@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -15,11 +15,13 @@
 #include "acl/Checklist.h"
 #include "acl/Data.h"
 
+/// \ingroup ACLAPI
 class ACLExtUser : public ACL
 {
-    MEMPROXY_CLASS(ACLExtUser);
 
 public:
+    MEMPROXY_CLASS(ACLExtUser);
+
     ACLExtUser(ACLData<char const *> *newData, char const *);
     ACLExtUser (ACLExtUser const &old);
     ACLExtUser & operator= (ACLExtUser const &rhs);
@@ -41,6 +43,8 @@ private:
     ACLData<char const *> *data;
     char const *type_;
 };
+
+MEMPROXY_CLASS_INLINE(ACLExtUser);
 
 #endif /* USE_AUTH */
 #endif /* SQUID_EXTUSER_H */

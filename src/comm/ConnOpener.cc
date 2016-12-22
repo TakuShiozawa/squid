@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -448,7 +448,7 @@ Comm::ConnOpener::timeout(const CommTimeoutCbParams &)
  * XXX: As soon as Comm::SetSelect() accepts Async calls we can use a ConnOpener::doConnect call
  */
 void
-Comm::ConnOpener::InProgressConnectRetry(int, void *data)
+Comm::ConnOpener::InProgressConnectRetry(int fd, void *data)
 {
     Pointer *ptr = static_cast<Pointer*>(data);
     assert(ptr);

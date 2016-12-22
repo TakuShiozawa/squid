@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -51,7 +51,7 @@ static char *shmbuf;
 static int DebugLevel = 0;
 
 static int
-do_open(diomsg * r, int, const char *buf)
+do_open(diomsg * r, int len, const char *buf)
 {
     int fd;
     file_state *fs;
@@ -85,7 +85,7 @@ do_open(diomsg * r, int, const char *buf)
 }
 
 static int
-do_close(diomsg * r, int)
+do_close(diomsg * r, int len)
 {
     int fd;
     file_state *fs;
@@ -115,7 +115,7 @@ do_close(diomsg * r, int)
 }
 
 static int
-do_read(diomsg * r, int, char *buf)
+do_read(diomsg * r, int len, char *buf)
 {
     int x;
     int readlen = r->size;
@@ -165,7 +165,7 @@ do_read(diomsg * r, int, char *buf)
 }
 
 static int
-do_write(diomsg * r, int, const char *buf)
+do_write(diomsg * r, int len, const char *buf)
 {
     int wrtlen = r->size;
     int x;
@@ -211,7 +211,7 @@ do_write(diomsg * r, int, const char *buf)
 }
 
 static int
-do_unlink(diomsg * r, int, const char *buf)
+do_unlink(diomsg * r, int len, const char *buf)
 {
     if (unlink(buf) < 0) {
         DEBUG(1) {
@@ -295,8 +295,11 @@ fsHash(const void *key, unsigned int n)
     return (*k & (--n));
 }
 
-extern "C" {
-    static void alarm_handler(int) {}
+SQUIDCEXTERN {
+    static void
+    alarm_handler(int sig) {
+        (void) 0;
+    }
 };
 
 int

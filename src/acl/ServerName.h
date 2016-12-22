@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -16,8 +16,8 @@
 #include "acl/Strategised.h"
 
 class ACLServerNameData : public ACLDomainData {
-    MEMPROXY_CLASS(ACLServerNameData);
 public:
+    MEMPROXY_CLASS(ACLServerNameData);
     ACLServerNameData() : ACLDomainData() {}
     virtual bool match(const char *);
     virtual ACLData<char const *> *clone() const;
@@ -45,6 +45,8 @@ private:
 
     ACLServerNameStrategy&operator=(ACLServerNameStrategy const &);
 };
+
+MEMPROXY_CLASS_INLINE(ACLServerNameData);
 
 class ACLServerName
 {

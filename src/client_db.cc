@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -17,6 +17,7 @@
 #include "fqdncache.h"
 #include "ip/Address.h"
 #include "log/access_log.h"
+#include "Mem.h"
 #include "mgr/Registration.h"
 #include "SquidConfig.h"
 #include "SquidMath.h"
@@ -137,7 +138,7 @@ ClientInfo * clientdbGetInfo(const Ip::Address &addr)
 }
 #endif
 void
-clientdbUpdate(const Ip::Address &addr, const LogTags &ltype, AnyP::ProtocolType p, size_t size)
+clientdbUpdate(const Ip::Address &addr, LogTags ltype, AnyP::ProtocolType p, size_t size)
 {
     char key[MAX_IPSTRLEN];
     ClientInfo *c;
@@ -157,18 +158,18 @@ clientdbUpdate(const Ip::Address &addr, const LogTags &ltype, AnyP::ProtocolType
 
     if (p == AnyP::PROTO_HTTP) {
         ++ c->Http.n_requests;
-        ++ c->Http.result_hist[ltype.oldType];
-        c->Http.kbytes_out += size;
+        ++ c->Http.result_hist[ltype];
+        kb_incr(&c->Http.kbytes_out, size);
 
-        if (ltype.isTcpHit())
-            c->Http.hit_kbytes_out += size;
+        if (logTypeIsATcpHit(ltype))
+            kb_incr(&c->Http.hit_kbytes_out, size);
     } else if (p == AnyP::PROTO_ICP) {
         ++ c->Icp.n_requests;
-        ++ c->Icp.result_hist[ltype.oldType];
-        c->Icp.kbytes_out += size;
+        ++ c->Icp.result_hist[ltype];
+        kb_incr(&c->Icp.kbytes_out, size);
 
-        if (LOG_UDP_HIT == ltype.oldType)
-            c->Icp.hit_kbytes_out += size;
+        if (LOG_UDP_HIT == ltype)
+            kb_incr(&c->Icp.hit_kbytes_out, size);
     }
 
     c->last_seen = squid_curtime;
@@ -287,7 +288,7 @@ clientdbDump(StoreEntry * sentry)
         storeAppendPrintf(sentry, "    ICP  Requests %d\n",
                           c->Icp.n_requests);
 
-        for (LogTags_ot l = LOG_TAG_NONE; l < LOG_TYPE_MAX; ++l) {
+        for (LogTags l = LOG_TAG_NONE; l < LOG_TYPE_MAX; ++l) {
             if (c->Icp.result_hist[l] == 0)
                 continue;
 
@@ -296,23 +297,23 @@ clientdbDump(StoreEntry * sentry)
             if (LOG_UDP_HIT == l)
                 icp_hits += c->Icp.result_hist[l];
 
-            storeAppendPrintf(sentry, "        %-20.20s %7d %3d%%\n", LogTags(l).c_str(), c->Icp.result_hist[l], Math::intPercent(c->Icp.result_hist[l], c->Icp.n_requests));
+            storeAppendPrintf(sentry, "        %-20.20s %7d %3d%%\n",LogTags_str[l], c->Icp.result_hist[l], Math::intPercent(c->Icp.result_hist[l], c->Icp.n_requests));
         }
 
         storeAppendPrintf(sentry, "    HTTP Requests %d\n", c->Http.n_requests);
 
-        for (LogTags_ot l = LOG_TAG_NONE; l < LOG_TYPE_MAX; ++l) {
+        for (LogTags l = LOG_TAG_NONE; l < LOG_TYPE_MAX; ++l) {
             if (c->Http.result_hist[l] == 0)
                 continue;
 
             http_total += c->Http.result_hist[l];
 
-            if (LogTags(l).isTcpHit())
+            if (logTypeIsATcpHit(l))
                 http_hits += c->Http.result_hist[l];
 
             storeAppendPrintf(sentry,
                               "        %-20.20s %7d %3d%%\n",
-                              LogTags(l).c_str(),
+                              LogTags_str[l],
                               c->Http.result_hist[l],
                               Math::intPercent(c->Http.result_hist[l], c->Http.n_requests));
         }
@@ -353,14 +354,14 @@ clientdbFreeMemory(void)
 }
 
 static void
-clientdbScheduledGC(void *)
+clientdbScheduledGC(void *unused)
 {
     cleanup_scheduled = 0;
     clientdbStartGC();
 }
 
 static void
-clientdbGC(void *)
+clientdbGC(void *unused)
 {
     static int bucket = 0;
     hash_link *link_next;
@@ -521,8 +522,8 @@ snmp_meshCtblFn(variable_list * Var, snint * ErrP)
     case MESH_CTBL_HTHITS:
         aggr = 0;
 
-        for (LogTags_ot l = LOG_TAG_NONE; l < LOG_TYPE_MAX; ++l) {
-            if (LogTags(l).isTcpHit())
+        for (LogTags l = LOG_TAG_NONE; l < LOG_TYPE_MAX; ++l) {
+            if (logTypeIsATcpHit(l))
                 aggr += c->Http.result_hist[l];
         }
 

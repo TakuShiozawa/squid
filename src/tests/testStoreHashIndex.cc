@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -7,12 +7,14 @@
  */
 
 #include "squid.h"
+#include "Mem.h"
 #include "MemObject.h"
 #include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
-#include "store/Disks.h"
+#include "StoreHashIndex.h"
 #include "StoreSearch.h"
+#include "SwapDir.h"
 #include "testStoreHashIndex.h"
 #include "TestSwapDir.h"
 
@@ -33,7 +35,8 @@ testStoreHashIndex::testStats()
     logEntry->makeMemObject();
     logEntry->mem_obj->setUris("dummy_storeId", NULL, HttpRequestMethod());
     logEntry->store_status = STORE_PENDING;
-    Store::Init();
+    StorePointer aRoot (new StoreHashIndex());
+    Store::Root(aRoot);
     TestSwapDirPointer aStore (new TestSwapDir);
     TestSwapDirPointer aStore2 (new TestSwapDir);
     addSwapDir(aStore);
@@ -44,7 +47,7 @@ testStoreHashIndex::testStats()
     free_cachedir(&Config.cacheSwap);
     CPPUNIT_ASSERT_EQUAL(true, aStore->statsCalled);
     CPPUNIT_ASSERT_EQUAL(true, aStore2->statsCalled);
-    Store::FreeMemory();
+    Store::Root(NULL);
 }
 
 void
@@ -54,18 +57,20 @@ testStoreHashIndex::testMaxSize()
     logEntry->makeMemObject();
     logEntry->mem_obj->setUris("dummy_storeId", NULL, HttpRequestMethod());
     logEntry->store_status = STORE_PENDING;
-    Store::Init();
+    StorePointer aRoot (new StoreHashIndex());
+    Store::Root(aRoot);
     TestSwapDirPointer aStore (new TestSwapDir);
     TestSwapDirPointer aStore2 (new TestSwapDir);
     addSwapDir(aStore);
     addSwapDir(aStore2);
     CPPUNIT_ASSERT_EQUAL(static_cast<uint64_t>(6), Store::Root().maxSize());
     free_cachedir(&Config.cacheSwap);
-    Store::FreeMemory();
+    Store::Root(NULL);
 }
 
 StoreEntry *
-addedEntry(Store::Disk *aStore,
+addedEntry(StorePointer hashStore,
+           StorePointer aStore,
            String name,
            String varySpec,
            String varyKey
@@ -80,7 +85,7 @@ addedEntry(Store::Disk *aStore,
     e->swap_dirn = -1;
 
     for (int i=0; i < Config.cacheSwap.n_configured; ++i) {
-        if (INDEXSD(i) == aStore)
+        if (INDEXSD (i) == aStore.getRaw())
             e->swap_dirn = i;
     }
 
@@ -89,7 +94,7 @@ addedEntry(Store::Disk *aStore,
     e->lastref = squid_curtime;
     e->timestamp = squid_curtime;
     e->expires = squid_curtime;
-    e->lastmod = squid_curtime;
+    e->lastModified(squid_curtime);
     e->refcount = 1;
     EBIT_CLR(e->flags, RELEASE_REQUEST);
     EBIT_CLR(e->flags, KEY_PRIVATE);
@@ -129,15 +134,16 @@ void
 testStoreHashIndex::testSearch()
 {
     commonInit();
-    Store::Init();
+    StorePointer aRoot (new StoreHashIndex());
+    Store::Root(aRoot);
     TestSwapDirPointer aStore (new TestSwapDir);
     TestSwapDirPointer aStore2 (new TestSwapDir);
     addSwapDir(aStore);
     addSwapDir(aStore2);
     Store::Root().init();
-    StoreEntry * entry1 = addedEntry(aStore.getRaw(), "name", NULL, NULL);
-    StoreEntry * entry2 = addedEntry(aStore2.getRaw(), "name2", NULL, NULL);
-    StoreSearchPointer search = Store::Root().search(); /* search for everything in the store */
+    StoreEntry * entry1 = addedEntry (&Store::Root(), aStore.getRaw(), "name", NULL, NULL);
+    StoreEntry * entry2 = addedEntry (&Store::Root(), aStore2.getRaw(), "name2", NULL, NULL);
+    StoreSearchPointer search = aRoot->search (NULL, NULL); /* search for everything in the store */
 
     /* nothing should be immediately available */
     CPPUNIT_ASSERT_EQUAL(false, search->error());
@@ -182,6 +188,6 @@ testStoreHashIndex::testSearch()
     CPPUNIT_ASSERT_EQUAL(static_cast<StoreEntry *>(NULL), search->currentItem());
     //CPPUNIT_ASSERT_EQUAL(false, search->next());
 
-    Store::FreeMemory();
+    Store::Root(NULL);
 }
 

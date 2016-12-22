@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -8,8 +8,6 @@
 
 #ifndef SQUID_AUTH_NEGOTIATE_SCHEME_H
 #define SQUID_AUTH_NEGOTIATE_SCHEME_H
-
-#if HAVE_AUTH_MODULE_NEGOTIATE
 
 #include "auth/Scheme.h"
 
@@ -44,6 +42,5 @@ private:
 } // namespace Negotiate
 } // namespace Auth
 
-#endif /* HAVE_AUTH_MODULE_NEGOTIATE */
 #endif /* SQUID_AUTH_NEGOTIATE_SCHEME_H */
 

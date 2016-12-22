@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -37,7 +37,7 @@ public:
     void stopPeerClock(const bool force);
 
     /// Return the total time spent communicating with peers
-    void totalResponseTime(struct timeval &responseTime);
+    int64_t totalResponseTime();
 
 public:
     hier_code code;
@@ -54,13 +54,13 @@ public:
 
     Http::StatusCode peer_reply_status; ///< last HTTP status code received
     timeval peer_http_request_sent; ///< last peer finished writing req
-    struct timeval peer_response_time; ///< last peer response delay
+    int64_t peer_response_time; ///< last peer response delay
     Comm::ConnectionPointer tcpServer; ///< TCP/IP level details of the last peer/server connection
     int64_t bodyBytesRead;  ///< number of body bytes received from the next hop or -1
 
 private:
     timeval firstConnStart_; ///< first connection use among all peers
-    struct timeval totalResponseTime_; ///< cumulative for all peers
+    int64_t totalResponseTime_; ///< cumulative for all peers
 };
 
 #endif /* SQUID_HTTPHIERARCHYLOGENTRY_H */

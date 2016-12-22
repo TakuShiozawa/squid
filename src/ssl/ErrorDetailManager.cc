@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -127,7 +127,7 @@ Ssl::ErrorDetailsManager::getErrorDetail(Ssl::ssl_error_t value, const HttpReque
 {
 #if USE_ERR_LOCALES
     String hdr;
-    if (request != NULL && request->header.getList(Http::HdrType::ACCEPT_LANGUAGE, &hdr)) {
+    if (request != NULL && request->header.getList(HDR_ACCEPT_LANGUAGE, &hdr)) {
         ErrorDetailsList::Pointer errDetails = NULL;
         //Try to retrieve from cache
         size_t pos = 0;
@@ -212,7 +212,7 @@ Ssl::ErrorDetailFile::parse(const char *buffer, int len, bool eof)
 
         if ( s != e) {
             DetailEntryParser parser;
-            if (!parser.parse(s, e - s)) {
+            if (!parser.parse(s, e)) {
                 debugs(83, DBG_IMPORTANT, HERE <<
                        "WARNING! parse error on:" << s);
                 return false;

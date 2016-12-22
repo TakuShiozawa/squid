@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -15,7 +15,6 @@
 #include "comm/Connection.h"
 #include "comm/Loops.h"
 #include "event.h"
-#include "fatal.h"
 #include "SquidConfig.h"
 
 #define WCCP_PORT 2048
@@ -174,7 +173,7 @@ wccpConnectionClose(void)
  * Accept the UDP packet
  */
 static void
-wccpHandleUdp(int sock, void *)
+wccpHandleUdp(int sock, void *not_used)
 {
     Ip::Address from;
     int len;
@@ -271,7 +270,7 @@ wccpLowestIP(void)
 }
 
 static void
-wccpHereIam(void *)
+wccpHereIam(void *voidnotused)
 {
     debugs(80, 6, "wccpHereIam: Called");
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -28,9 +28,9 @@ private:
 
 template <>
 inline int
-ACLReplyHeaderStrategy<Http::HdrType::CONTENT_TYPE>::match(ACLData<char const *> * &data, ACLFilledChecklist *checklist, ACLFlags &)
+ACLReplyHeaderStrategy<HDR_CONTENT_TYPE>::match(ACLData<char const *> * &data, ACLFilledChecklist *checklist, ACLFlags &)
 {
-    char const *theHeader = checklist->reply->header.getStr(Http::HdrType::CONTENT_TYPE);
+    char const *theHeader = checklist->reply->header.getStr(HDR_CONTENT_TYPE);
 
     if (NULL == theHeader)
         theHeader = "";

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -150,9 +150,9 @@ bool Adaptation::History::extractNextServices(String &value)
 void Adaptation::History::recordMeta(const HttpHeader *lm)
 {
     lastMeta.clean();
-    lastMeta.update(lm, NULL);
+    lastMeta.update(lm);
 
-    allMeta.update(lm, NULL);
+    allMeta.update(lm);
     allMeta.compact();
 }
 

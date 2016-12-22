@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,6 +11,7 @@
 #include "getfullhostname.h"
 #include "html_quote.h"
 #include "ip/Address.h"
+#include "MemBuf.h"
 #include "rfc1123.h"
 #include "rfc1738.h"
 #include "util.h"
@@ -423,8 +424,8 @@ menu_url(cachemgr_request * req, const char *action)
     return url;
 }
 
-static const char *
-munge_menu_line(const char *buf, cachemgr_request * req)
+static void
+munge_menu_line(MemBuf &out, const char *buf, cachemgr_request * req)
 {
     char *x;
     const char *a;
@@ -432,15 +433,14 @@ munge_menu_line(const char *buf, cachemgr_request * req)
     const char *p;
     char *a_url;
     char *buf_copy;
-    static char html[2 * 1024];
 
-    if (strlen(buf) < 1)
-        return buf;
+    const char bufLen = strlen(buf);
+    if (bufLen < 1 || *buf != ' ') {
+        out.append(buf, bufLen);
+        return;
+    }
 
-    if (*buf != ' ')
-        return buf;
-
-    buf_copy = x = xstrdup(buf);
+    buf_copy = x = xstrndup(buf, bufLen);
 
     a = xstrtok(&x, '\t');
 
@@ -452,59 +452,56 @@ munge_menu_line(const char *buf, cachemgr_request * req)
 
     /* no reason to give a url for a disabled action */
     if (!strcmp(p, "disabled"))
-        snprintf(html, sizeof(html), "<LI type=\"circle\">%s (disabled)<A HREF=\"%s\">.</A>\n", d, a_url);
+        out.Printf("<LI type=\"circle\">%s (disabled)<A HREF=\"%s\">.</A>\n", d, a_url);
     else
         /* disable a hidden action (requires a password, but password is not in squid.conf) */
         if (!strcmp(p, "hidden"))
-            snprintf(html, sizeof(html), "<LI type=\"circle\">%s (hidden)<A HREF=\"%s\">.</A>\n", d, a_url);
+            out.Printf("<LI type=\"circle\">%s (hidden)<A HREF=\"%s\">.</A>\n", d, a_url);
         else
             /* disable link if authentication is required and we have no password */
             if (!strcmp(p, "protected") && !req->passwd)
-                snprintf(html, sizeof(html), "<LI type=\"circle\">%s (requires <a href=\"%s\">authentication</a>)<A HREF=\"%s\">.</A>\n",
-                         d, menu_url(req, "authenticate"), a_url);
+                out.Printf("<LI type=\"circle\">%s (requires <a href=\"%s\">authentication</a>)<A HREF=\"%s\">.</A>\n",
+                           d, menu_url(req, "authenticate"), a_url);
             else
                 /* highlight protected but probably available entries */
                 if (!strcmp(p, "protected"))
-                    snprintf(html, sizeof(html), "<LI type=\"square\"><A HREF=\"%s\"><font color=\"#FF0000\">%s</font></A>\n",
-                             a_url, d);
+                    out.Printf("<LI type=\"square\"><A HREF=\"%s\"><font color=\"#FF0000\">%s</font></A>\n",
+                               a_url, d);
 
     /* public entry or unknown type of protection */
                 else
-                    snprintf(html, sizeof(html), "<LI type=\"disk\"><A HREF=\"%s\">%s</A>\n", a_url, d);
+                    out.Printf("<LI type=\"disk\"><A HREF=\"%s\">%s</A>\n", a_url, d);
 
     xfree(a_url);
 
     xfree(buf_copy);
-
-    return html;
 }
 
-static const char *
-munge_other_line(const char *buf, cachemgr_request *)
+static void
+munge_other_line(MemBuf &out, const char *buf, cachemgr_request *)
 {
     static const char *ttags[] = {"td", "th"};
 
-    static char html[4096];
     static int table_line_num = 0;
     static int next_is_header = 0;
     int is_header = 0;
     const char *ttag;
     char *buf_copy;
     char *x, *p;
-    int l = 0;
     /* does it look like a table? */
 
     if (!strchr(buf, '\t') || *buf == '\t') {
         /* nope, just text */
-        snprintf(html, sizeof(html), "%s%s",
-                 table_line_num ? "</table>\n<pre>" : "", html_quote(buf));
+        if (table_line_num)
+            out.append("</table>\n<pre>", 14);
+        out.Printf("%s", html_quote(buf));
         table_line_num = 0;
-        return html;
+        return;
     }
 
     /* start html table */
     if (!table_line_num) {
-        l += snprintf(html + l, sizeof(html) - l, "</pre><table cellpadding=\"2\" cellspacing=\"1\">\n");
+        out.append("</pre><table cellpadding=\"2\" cellspacing=\"1\">\n", 46);
         next_is_header = 0;
     }
 
@@ -514,7 +511,7 @@ munge_other_line(const char *buf, cachemgr_request *)
     ttag = ttags[is_header];
 
     /* record starts */
-    l += snprintf(html + l, sizeof(html) - l, "<tr>");
+    out.append("<tr>", 4);
 
     /* substitute '\t' */
     buf_copy = x = xstrdup(buf);
@@ -531,18 +528,17 @@ munge_other_line(const char *buf, cachemgr_request *)
             ++x;
         }
 
-        l += snprintf(html + l, sizeof(html) - l, "<%s colspan=\"%d\" align=\"%s\">%s</%s>",
-                      ttag, column_span,
-                      is_header ? "center" : is_number(cell) ? "right" : "left",
-                      html_quote(cell), ttag);
+        out.Printf("<%s colspan=\"%d\" align=\"%s\">%s</%s>",
+                   ttag, column_span,
+                   is_header ? "center" : is_number(cell) ? "right" : "left",
+                   html_quote(cell), ttag);
     }
 
     xfree(buf_copy);
     /* record ends */
-    snprintf(html + l, sizeof(html) - l, "</tr>\n");
+    out.append("</tr>\n", 6);
     next_is_header = is_header && strstr(buf, "\t\t");
     ++table_line_num;
-    return html;
 }
 
 static const char *
@@ -699,14 +695,18 @@ read_reply(int s, cachemgr_request * req)
         /* yes, fall through, we do not want to loose the first line */
 
         case isBody:
+        {
             /* interpret [and reformat] cache response */
-
+            MemBuf out;
+            out.init();
             if (parse_menu)
-                fputs(munge_menu_line(buf, req), stdout);
+                munge_menu_line(out, buf, req);
             else
-                fputs(munge_other_line(buf, req), stdout);
+                munge_other_line(out, buf, req);
 
-            break;
+            fputs(out.buf, stdout);
+        }
+        break;
 
         case isForward:
             /* forward: no modifications allowed */
@@ -1079,11 +1079,7 @@ make_pub_auth(cachemgr_request * req)
 
     const int encodedLen = base64_encode_len(bufLen);
     req->pub_auth = (char *) xmalloc(encodedLen);
-    struct base64_encode_ctx ctx;
-    base64_encode_init(&ctx);
-    size_t blen = base64_encode_update(&ctx, reinterpret_cast<uint8_t*>(req->pub_auth), bufLen, reinterpret_cast<uint8_t*>(buf));
-    blen += base64_encode_final(&ctx, reinterpret_cast<uint8_t*>(req->pub_auth)+blen);
-    req->pub_auth[blen] = '\0';
+    base64_encode_str(req->pub_auth, encodedLen, buf, bufLen);
     debug("cmgr: encoded: '%s'\n", req->pub_auth);
 }
 
@@ -1102,16 +1098,9 @@ decode_pub_auth(cachemgr_request * req)
     if (!req->pub_auth || strlen(req->pub_auth) < 4 + strlen(safe_str(req->hostname)))
         return;
 
-    size_t decodedLen = BASE64_DECODE_LENGTH(strlen(req->pub_auth));
+    const int decodedLen = base64_decode_len(req->pub_auth);
     buf = (char*)xmalloc(decodedLen);
-    struct base64_decode_ctx ctx;
-    base64_decode_init(&ctx);
-    if (!base64_decode_update(&ctx, &decodedLen, reinterpret_cast<uint8_t*>(buf), strlen(req->pub_auth), reinterpret_cast<const uint8_t*>(req->pub_auth)) ||
-            !base64_decode_final(&ctx)) {
-        debug("cmgr: base64 decode failure. Incomplete auth token string.\n");
-        xfree(buf);
-        return;
-    }
+    base64_decode(buf, decodedLen, req->pub_auth);
 
     debug("cmgr: length ok\n");
 
@@ -1191,18 +1180,14 @@ make_auth_header(const cachemgr_request * req)
     if (encodedLen <= 0)
         return "";
 
-    uint8_t *str64 = static_cast<uint8_t*>(xmalloc(encodedLen));
-    struct base64_encode_ctx ctx;
-    base64_encode_init(&ctx);
-    size_t blen = base64_encode_update(&ctx, str64, bufLen, reinterpret_cast<uint8_t*>(buf));
-    blen += base64_encode_final(&ctx, str64+blen);
-    str64[blen] = '\0';
+    char *str64 = static_cast<char*>(xmalloc(encodedLen));
+    base64_encode_str(str64, encodedLen, buf, bufLen);
 
-    stringLength += snprintf(buf, sizeof(buf), "Authorization: Basic %.*s\r\n", (int)blen, str64);
+    stringLength += snprintf(buf, sizeof(buf), "Authorization: Basic %s\r\n", str64);
 
     assert(stringLength < sizeof(buf));
 
-    snprintf(&buf[stringLength], sizeof(buf) - stringLength, "Proxy-Authorization: Basic %.*s\r\n", (int)blen, str64);
+    snprintf(&buf[stringLength], sizeof(buf) - stringLength, "Proxy-Authorization: Basic %s\r\n", str64);
 
     xfree(str64);
     return buf;

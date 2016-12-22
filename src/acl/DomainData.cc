@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,10 +12,8 @@
 #include "acl/Checklist.h"
 #include "acl/DomainData.h"
 #include "cache_cf.h"
-#include "ConfigParser.h"
 #include "Debug.h"
 #include "src/URL.h"
-#include "util.h"
 
 template<class T>
 inline void
@@ -135,10 +133,12 @@ ACLDomainData::dump() const
 void
 ACLDomainData::parse()
 {
+    char *t = NULL;
+
     if (!domains)
         domains = new Splay<char *>();
 
-    while (char *t = ConfigParser::strtokFile()) {
+    while ((t = strtokFile())) {
         Tolower(t);
         domains->insert(xstrdup(t), aclDomainCompare);
     }

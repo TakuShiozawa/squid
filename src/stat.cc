@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,7 +21,6 @@
 #include "globals.h"
 #include "HttpRequest.h"
 #include "IoStats.h"
-#include "mem/Pool.h"
 #include "mem_node.h"
 #include "MemBuf.h"
 #include "MemObject.h"
@@ -43,8 +42,6 @@
 #include "store_digest.h"
 #include "StoreClient.h"
 #include "tools.h"
-// for tvSubDsec() which should be in SquidTime.h
-#include "util.h"
 #if USE_AUTH
 #include "auth/UserRequest.h"
 #endif
@@ -68,17 +65,18 @@ typedef int STOBJFLT(const StoreEntry *);
 
 class StatObjectsState
 {
-    CBDATA_CLASS(StatObjectsState);
 
 public:
     StoreEntry *sentry;
     STOBJFLT *filter;
     StoreSearchPointer theSearch;
+
+private:
+    CBDATA_CLASS2(StatObjectsState);
 };
 
 /* LOCALS */
 static const char *describeStatuses(const StoreEntry *);
-static const char *describeTimestamps(const StoreEntry *);
 static void statAvgTick(void *notused);
 static void statAvgDump(StoreEntry *, int minutes, int hours);
 #if STAT_GRAPHS
@@ -287,8 +285,8 @@ storeEntryFlags(const StoreEntry * entry)
     if (EBIT_TEST(flags, ENTRY_SPECIAL))
         strcat(buf, "SPECIAL,");
 
-    if (EBIT_TEST(flags, ENTRY_REVALIDATE))
-        strcat(buf, "REVALIDATE,");
+    if (EBIT_TEST(flags, ENTRY_REVALIDATE_ALWAYS))
+        strcat(buf, "REVALIDATE_ALWAYS,");
 
     if (EBIT_TEST(flags, DELAY_SENDING))
         strcat(buf, "DELAY_SENDING,");
@@ -298,6 +296,9 @@ storeEntryFlags(const StoreEntry * entry)
 
     if (EBIT_TEST(flags, REFRESH_REQUEST))
         strcat(buf, "REFRESH_REQUEST,");
+
+    if (EBIT_TEST(flags, ENTRY_REVALIDATE_STALE))
+        strcat(buf, "REVALIDATE_STALE,");
 
     if (EBIT_TEST(flags, ENTRY_DISPATCHED))
         strcat(buf, "DISPATCHED,");
@@ -326,33 +327,25 @@ storeEntryFlags(const StoreEntry * entry)
     return buf;
 }
 
-static const char *
-describeTimestamps(const StoreEntry * entry)
-{
-    LOCAL_ARRAY(char, buf, 256);
-    snprintf(buf, 256, "LV:%-9d LU:%-9d LM:%-9d EX:%-9d",
-             (int) entry->timestamp,
-             (int) entry->lastref,
-             (int) entry->lastmod,
-             (int) entry->expires);
-    return buf;
-}
-
 static void
 statStoreEntry(MemBuf * mb, StoreEntry * e)
 {
     MemObject *mem = e->mem_obj;
-    mb->appendf("KEY %s\n", e->getMD5Text());
-    mb->appendf("\t%s\n", describeStatuses(e));
-    mb->appendf("\t%s\n", storeEntryFlags(e));
-    mb->appendf("\t%s\n", describeTimestamps(e));
-    mb->appendf("\t%d locks, %d clients, %d refs\n", (int) e->locks(), storePendingNClients(e), (int) e->refcount);
-    mb->appendf("\tSwap Dir %d, File %#08X\n", e->swap_dirn, e->swap_filen);
+    mb->Printf("KEY %s\n", e->getMD5Text());
+    mb->Printf("\t%s\n", describeStatuses(e));
+    mb->Printf("\t%s\n", storeEntryFlags(e));
+    mb->Printf("\t%s\n", e->describeTimestamps());
+    mb->Printf("\t%d locks, %d clients, %d refs\n",
+               (int) e->locks(),
+               storePendingNClients(e),
+               (int) e->refcount);
+    mb->Printf("\tSwap Dir %d, File %#08X\n",
+               e->swap_dirn, e->swap_filen);
 
     if (mem != NULL)
         mem->stat (mb);
 
-    mb->append("\n", 1);
+    mb->Printf("\n");
 }
 
 /* process objects list */
@@ -409,7 +402,7 @@ statObjectsStart(StoreEntry * sentry, STOBJFLT * filter)
     state->filter = filter;
 
     sentry->lock("statObjects");
-    state->theSearch = Store::Root().search();
+    state->theSearch = Store::Root().search(NULL, NULL);
 
     eventAdd("statObjects", statObjects, state, 0.0, 1);
 }
@@ -804,6 +797,7 @@ void
 DumpMallocStatistics(StoreEntry* sentry)
 {
 #if XMALLOC_STATISTICS
+
     xm_deltat = current_dtime - xm_time;
     xm_time = current_dtime;
     storeAppendPrintf(sentry, "\nMemory allocation statistics\n");
@@ -1216,7 +1210,7 @@ statRegisterWithCacheManager(void)
 #if USE_AUTH
     Mgr::RegisterAction("username_cache",
                         "Active Cached Usernames",
-                        Auth::User::CredentialsCacheStats, 0, 1);
+                        Auth::User::UsernameCacheStats, 0, 1);
 #endif
 #if DEBUG_OPENFD
     Mgr::RegisterAction("openfd_objects", "Objects with Swapout files open",
@@ -1252,7 +1246,7 @@ statInit(void)
 }
 
 static void
-statAvgTick(void *)
+statAvgTick(void *notused)
 {
     StatCounters *t = &CountHist[0];
     StatCounters *p = &CountHist[1];
@@ -1857,16 +1851,17 @@ statClientRequests(StoreEntry * s)
                               fd_table[fd].bytes_read, fd_table[fd].bytes_written);
             storeAppendPrintf(s, "\tFD desc: %s\n", fd_table[fd].desc);
             storeAppendPrintf(s, "\tin: buf %p, used %ld, free %ld\n",
-                              conn->inBuf.rawContent(), (long int) conn->inBuf.length(), (long int) conn->inBuf.spaceSize());
+                              conn->in.buf.c_str(), (long int) conn->in.buf.length(), (long int) conn->in.buf.spaceSize());
             storeAppendPrintf(s, "\tremote: %s\n",
                               conn->clientConnection->remote.toUrl(buf,MAX_IPSTRLEN));
             storeAppendPrintf(s, "\tlocal: %s\n",
                               conn->clientConnection->local.toUrl(buf,MAX_IPSTRLEN));
-            storeAppendPrintf(s, "\tnrequests: %u\n", conn->pipeline.nrequests);
+            storeAppendPrintf(s, "\tnrequests: %d\n",
+                              conn->nrequests);
         }
 
         storeAppendPrintf(s, "uri %s\n", http->uri);
-        storeAppendPrintf(s, "logType %s\n", http->logType.c_str());
+        storeAppendPrintf(s, "logType %s\n", LogTags_str[http->logType]);
         storeAppendPrintf(s, "out.offset %ld, out.size %lu\n",
                           (long int) http->out.offset, (unsigned long int) http->out.size);
         storeAppendPrintf(s, "req_sz %ld\n", (long int) http->req_sz);

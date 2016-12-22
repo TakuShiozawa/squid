@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -32,11 +32,7 @@
 #include "StatCounters.h"
 #include "stmem.h"
 #include "Store.h"
-#include "store/Controller.h"
-#include "store/Disk.h"
-#include "store/Disks.h"
 #include "store_digest.h"
-#include "store_key_md5.h"
 #include "store_key_md5.h"
 #include "store_log.h"
 #include "store_rebuild.h"
@@ -45,15 +41,11 @@
 #include "StoreMeta.h"
 #include "StrList.h"
 #include "swap_log_op.h"
+#include "SwapDir.h"
 #include "tools.h"
 #if USE_DELAY_POOLS
 #include "DelayPools.h"
 #endif
-
-/** StoreEntry uses explicit new/delete operators, which set pool chunk size to 2MB
- * XXX: convert to MEMPROXY_CLASS() API
- */
-#include "mem/Pool.h"
 
 #include <climits>
 #include <stack>
@@ -112,20 +104,70 @@ static EVH storeLateRelease;
 static std::stack<StoreEntry*> LateReleaseStack;
 MemAllocator *StoreEntry::pool = NULL;
 
+StorePointer Store::CurrentRoot = NULL;
+
+void
+Store::Root(Store * aRoot)
+{
+    CurrentRoot = aRoot;
+}
+
+void
+Store::Root(StorePointer aRoot)
+{
+    Root(aRoot.getRaw());
+}
+
 void
 Store::Stats(StoreEntry * output)
 {
-    assert(output);
+    assert (output);
     Root().stat(*output);
 }
 
 void
-StoreEntry::makePublic()
+Store::create()
+{}
+
+void
+Store::diskFull()
+{}
+
+void
+Store::sync()
+{}
+
+void
+Store::unlink (StoreEntry &anEntry)
+{
+    fatal("Store::unlink on invalid Store\n");
+}
+
+void *
+StoreEntry::operator new (size_t bytecount)
+{
+    assert (bytecount == sizeof (StoreEntry));
+
+    if (!pool) {
+        pool = memPoolCreate ("StoreEntry", bytecount);
+    }
+
+    return pool->alloc();
+}
+
+void
+StoreEntry::operator delete (void *address)
+{
+    pool->freeOne(address);
+}
+
+void
+StoreEntry::makePublic(const KeyScope scope)
 {
     /* This object can be cached for a long time */
 
     if (!EBIT_TEST(flags, RELEASE_REQUEST))
-        setPublicKey();
+        setPublicKey(scope);
 }
 
 void
@@ -230,13 +272,13 @@ StoreEntry::bytesWanted (Range<size_t> const aRange, bool ignoreDelayPools) cons
 }
 
 bool
-StoreEntry::checkDeferRead(int) const
+StoreEntry::checkDeferRead(int fd) const
 {
     return (bytesWanted(Range<size_t>(0,INT_MAX)) == 0);
 }
 
 void
-StoreEntry::setNoDelay(bool const newValue)
+StoreEntry::setNoDelay (bool const newValue)
 {
     if (mem_obj)
         mem_obj->setNoDelay(newValue);
@@ -313,7 +355,7 @@ StoreEntry::StoreEntry() :
     timestamp(-1),
     lastref(-1),
     expires(-1),
-    lastmod(-1),
+    lastModified_(-1),
     swap_file_sz(0),
     refcount(0),
     flags(0),
@@ -383,8 +425,10 @@ destroyStoreEntry(void *data)
         return;
 
     // Store::Root() is FATALly missing during shutdown
-    if (e->swap_filen >= 0 && !shutting_down)
-        e->disk().disconnect(*e);
+    if (e->swap_filen >= 0 && !shutting_down) {
+        SwapDir &sd = dynamic_cast<SwapDir&>(*e->store());
+        sd.disconnect(*e);
+    }
 
     e->destroyMemObject();
 
@@ -443,6 +487,7 @@ void
 StoreEntry::touch()
 {
     lastref = squid_curtime;
+    Store::Root().reference(*this);
 }
 
 void
@@ -540,19 +585,19 @@ storeGetPublic(const char *uri, const HttpRequestMethod& method)
 }
 
 StoreEntry *
-storeGetPublicByRequestMethod(HttpRequest * req, const HttpRequestMethod& method)
+storeGetPublicByRequestMethod(HttpRequest * req, const HttpRequestMethod& method, const KeyScope keyScope)
 {
-    return Store::Root().get(storeKeyPublicByRequestMethod(req, method));
+    return Store::Root().get(storeKeyPublicByRequestMethod(req, method, keyScope));
 }
 
 StoreEntry *
-storeGetPublicByRequest(HttpRequest * req)
+storeGetPublicByRequest(HttpRequest * req, const KeyScope keyScope)
 {
-    StoreEntry *e = storeGetPublicByRequestMethod(req, req->method);
+    StoreEntry *e = storeGetPublicByRequestMethod(req, req->method, keyScope);
 
     if (e == NULL && req->method == Http::METHOD_HEAD)
         /* We can generate a HEAD reply from a cached GET object */
-        e = storeGetPublicByRequestMethod(req, Http::METHOD_GET);
+        e = storeGetPublicByRequestMethod(req, Http::METHOD_GET, keyScope);
 
     return e;
 }
@@ -608,10 +653,8 @@ StoreEntry::setPrivateKey()
 }
 
 void
-StoreEntry::setPublicKey()
+StoreEntry::setPublicKey(const KeyScope scope)
 {
-    const cache_key *newkey;
-
     if (key && !EBIT_TEST(flags, KEY_PRIVATE))
         return;                 /* is already public */
 
@@ -635,84 +678,35 @@ StoreEntry::setPublicKey()
 
     assert(!EBIT_TEST(flags, RELEASE_REQUEST));
 
-    if (mem_obj->request) {
-        HttpRequest *request = mem_obj->request;
+    adjustVary();
+    forcePublicKey(calcPublicKey(scope));
+}
 
-        if (!mem_obj->vary_headers) {
-            /* First handle the case where the object no longer varies */
-            safe_free(request->vary_headers);
-        } else {
-            if (request->vary_headers && strcmp(request->vary_headers, mem_obj->vary_headers) != 0) {
-                /* Oops.. the variance has changed. Kill the base object
-                 * to record the new variance key
-                 */
-                safe_free(request->vary_headers);       /* free old "bad" variance key */
-                if (StoreEntry *pe = storeGetPublic(mem_obj->storeId(), mem_obj->method))
-                    pe->release();
-            }
+void
+StoreEntry::clearPublicKeyScope()
+{
+    if (!key || EBIT_TEST(flags, KEY_PRIVATE))
+        return; // probably the old public key was deleted or made private
 
-            /* Make sure the request knows the variance status */
-            if (!request->vary_headers) {
-                const char *vary = httpMakeVaryMark(request, mem_obj->getReply());
+    // TODO: adjustVary() when collapsed revalidation supports that
 
-                if (vary)
-                    request->vary_headers = xstrdup(vary);
-            }
-        }
+    const cache_key *newKey = calcPublicKey(ksDefault);
+    if (!storeKeyHashCmp(key, newKey))
+        return; // probably another collapsed revalidation beat us to this change
 
-        // TODO: storeGetPublic() calls below may create unlocked entries.
-        // We should add/use storeHas() API or lock/unlock those entries.
-        if (mem_obj->vary_headers && !storeGetPublic(mem_obj->storeId(), mem_obj->method)) {
-            /* Create "vary" base object */
-            String vary;
-            StoreEntry *pe = storeCreateEntry(mem_obj->storeId(), mem_obj->logUri(), request->flags, request->method);
-            /* We are allowed to do this typecast */
-            HttpReply *rep = new HttpReply;
-            rep->setHeaders(Http::scOkay, "Internal marker object", "x-squid-internal/vary", -1, -1, squid_curtime + 100000);
-            vary = mem_obj->getReply()->header.getList(Http::HdrType::VARY);
+    forcePublicKey(newKey);
+}
 
-            if (vary.size()) {
-                /* Again, we own this structure layout */
-                rep->header.putStr(Http::HdrType::VARY, vary.termedBuf());
-                vary.clean();
-            }
-
-#if X_ACCELERATOR_VARY
-            vary = mem_obj->getReply()->header.getList(Http::HdrType::HDR_X_ACCELERATOR_VARY);
-
-            if (vary.size() > 0) {
-                /* Again, we own this structure layout */
-                rep->header.putStr(Http::HdrType::HDR_X_ACCELERATOR_VARY, vary.termedBuf());
-                vary.clean();
-            }
-
-#endif
-            pe->replaceHttpReply(rep, false); // no write until key is public
-
-            pe->timestampsSet();
-
-            pe->makePublic();
-
-            pe->startWriting(); // after makePublic()
-
-            pe->complete();
-
-            pe->unlock("StoreEntry::setPublicKey+Vary");
-        }
-
-        newkey = storeKeyPublicByRequest(mem_obj->request);
-    } else
-        newkey = storeKeyPublic(mem_obj->storeId(), mem_obj->method);
-
+/// Unconditionally sets public key for this store entry.
+/// Releases the old entry with the same public key (if any).
+void
+StoreEntry::forcePublicKey(const cache_key *newkey)
+{
     if (StoreEntry *e2 = (StoreEntry *)hash_lookup(store_table, newkey)) {
+        assert(e2 != this);
         debugs(20, 3, "Making old " << *e2 << " private.");
         e2->setPrivateKey();
         e2->release();
-
-        if (mem_obj->request)
-            newkey = storeKeyPublicByRequest(mem_obj->request);
-        else
-            newkey = storeKeyPublic(mem_obj->storeId(), mem_obj->method);
     }
 
     if (key)
@@ -724,6 +718,84 @@ StoreEntry::setPublicKey()
 
     if (swap_filen > -1)
         storeDirSwapLog(this, SWAP_LOG_ADD);
+}
+
+/// Calculates correct public key for feeding forcePublicKey().
+/// Assumes adjustVary() has been called for this entry already.
+const cache_key *StoreEntry::calcPublicKey(const KeyScope keyScope) {
+    assert(mem_obj);
+    return mem_obj->request ?  storeKeyPublicByRequest(mem_obj->request, keyScope) :
+           storeKeyPublic(mem_obj->storeId(), mem_obj->method, keyScope);
+}
+
+/// Updates mem_obj->request->vary_headers to reflect the current Vary.
+/// The vary_headers field is used to calculate the Vary marker key.
+/// Releases the old Vary marker with an outdated key (if any).
+void StoreEntry::adjustVary() {
+    assert(mem_obj);
+
+    if (!mem_obj->request)
+        return;
+
+    HttpRequest *request = mem_obj->request;
+
+    if (mem_obj->vary_headers.isEmpty()) {
+        /* First handle the case where the object no longer varies */
+        request->vary_headers.clear();
+    } else {
+        if (!request->vary_headers.isEmpty() && request->vary_headers.cmp(mem_obj->vary_headers) != 0) {
+            /* Oops.. the variance has changed. Kill the base object
+             * to record the new variance key
+             */
+            request->vary_headers.clear();       /* free old "bad" variance key */
+            if (StoreEntry *pe = storeGetPublic(mem_obj->storeId(), mem_obj->method))
+                pe->release();
+        }
+
+        /* Make sure the request knows the variance status */
+        if (request->vary_headers.isEmpty())
+            request->vary_headers = httpMakeVaryMark(request, mem_obj->getReply());
+    }
+
+    // TODO: storeGetPublic() calls below may create unlocked entries.
+    // We should add/use storeHas() API or lock/unlock those entries.
+    if (!mem_obj->vary_headers.isEmpty() && !storeGetPublic(mem_obj->storeId(), mem_obj->method)) {
+        /* Create "vary" base object */
+        String vary;
+        StoreEntry *pe = storeCreateEntry(mem_obj->storeId(), mem_obj->logUri(), request->flags, request->method);
+        /* We are allowed to do this typecast */
+        HttpReply *rep = new HttpReply;
+        rep->setHeaders(Http::scOkay, "Internal marker object", "x-squid-internal/vary", -1, -1, squid_curtime + 100000);
+        vary = mem_obj->getReply()->header.getList(HDR_VARY);
+
+        if (vary.size()) {
+            /* Again, we own this structure layout */
+            rep->header.putStr(HDR_VARY, vary.termedBuf());
+            vary.clean();
+        }
+
+#if X_ACCELERATOR_VARY
+        vary = mem_obj->getReply()->header.getList(HDR_X_ACCELERATOR_VARY);
+
+        if (vary.size() > 0) {
+            /* Again, we own this structure layout */
+            rep->header.putStr(HDR_X_ACCELERATOR_VARY, vary.termedBuf());
+            vary.clean();
+        }
+
+#endif
+        pe->replaceHttpReply(rep, false); // no write until key is public
+
+        pe->timestampsSet();
+
+        pe->makePublic();
+
+        pe->startWriting(); // after makePublic()
+
+        pe->complete();
+
+        pe->unlock("StoreEntry::forcePublicKey+Vary");
+    }
 }
 
 StoreEntry *
@@ -814,61 +886,23 @@ StoreEntry::append(char const *buf, int len)
 }
 
 void
-StoreEntry::vappendf(const char *fmt, va_list vargs)
-{
-    LOCAL_ARRAY(char, buf, 4096);
-    *buf = 0;
-    int x;
-
-#ifdef VA_COPY
-    va_args ap;
-    /* Fix of bug 753r. The value of vargs is undefined
-     * after vsnprintf() returns. Make a copy of vargs
-     * incase we loop around and call vsnprintf() again.
-     */
-    VA_COPY(ap,vargs);
-    errno = 0;
-    if ((x = vsnprintf(buf, sizeof(buf), fmt, ap)) < 0) {
-        fatal(xstrerr(errno));
-        return;
-    }
-    va_end(ap);
-#else /* VA_COPY */
-    errno = 0;
-    if ((x = vsnprintf(buf, sizeof(buf), fmt, vargs)) < 0) {
-        fatal(xstrerr(errno));
-        return;
-    }
-#endif /*VA_COPY*/
-
-    if (x < static_cast<int>(sizeof(buf))) {
-        append(buf, x);
-        return;
-    }
-
-    // okay, do it the slow way.
-    char *buf2 = new char[x+1];
-    int y = vsnprintf(buf2, x+1, fmt, vargs);
-    assert(y >= 0 && y == x);
-    append(buf2, y);
-    delete[] buf2;
-}
-
-// deprecated. use StoreEntry::appendf() instead.
-void
 storeAppendPrintf(StoreEntry * e, const char *fmt,...)
 {
     va_list args;
     va_start(args, fmt);
-    e->vappendf(fmt, args);
+
+    storeAppendVPrintf(e, fmt, args);
     va_end(args);
 }
 
-// deprecated. use StoreEntry::appendf() instead.
+/* used be storeAppendPrintf and Packer */
 void
 storeAppendVPrintf(StoreEntry * e, const char *fmt, va_list vargs)
 {
-    e->vappendf(fmt, vargs);
+    LOCAL_ARRAY(char, buf, 4096);
+    buf[0] = '\0';
+    vsnprintf(buf, 4096, fmt, vargs);
+    e->append(buf, strlen(buf));
 }
 
 struct _store_check_cachable_hist {
@@ -1187,7 +1221,7 @@ storeGetMemSpace(int size)
  * it becomes active will self register
  */
 void
-Store::Maintain(void *)
+Store::Maintain(void *notused)
 {
     Store::Root().maintain();
 
@@ -1199,6 +1233,34 @@ Store::Maintain(void *)
 /* The maximum objects to scan for maintain storage space */
 #define MAINTAIN_MAX_SCAN       1024
 #define MAINTAIN_MAX_REMOVE     64
+
+/*
+ * This routine is to be called by main loop in main.c.
+ * It removes expired objects on only one bucket for each time called.
+ *
+ * This should get called 1/s from main().
+ */
+void
+StoreController::maintain()
+{
+    static time_t last_warn_time = 0;
+
+    PROF_start(storeMaintainSwapSpace);
+    swapDir->maintain();
+
+    /* this should be emitted by the oversize dir, not globally */
+
+    if (Store::Root().currentSize() > Store::Root().maxSize()) {
+        if (squid_curtime - last_warn_time > 10) {
+            debugs(20, DBG_CRITICAL, "WARNING: Disk space over limit: "
+                   << Store::Root().currentSize() / 1024.0 << " KB > "
+                   << (Store::Root().maxSize() >> 10) << " KB");
+            last_warn_time = squid_curtime;
+        }
+    }
+
+    PROF_stop(storeMaintainSwapSpace);
+}
 
 /* release an object from a cache */
 void
@@ -1217,38 +1279,46 @@ StoreEntry::release()
         return;
     }
 
-    if (Store::Controller::store_dirs_rebuilding && swap_filen > -1) {
-        /* TODO: Teach disk stores to handle releases during rebuild instead. */
+    Store::Root().memoryUnlink(*this);
 
-        Store::Root().memoryUnlink(*this);
-
+    if (StoreController::store_dirs_rebuilding && swap_filen > -1) {
         setPrivateKey();
 
-        // lock the entry until rebuilding is done
-        lock("storeLateRelease");
-        setReleaseFlag();
-        LateReleaseStack.push(this);
+        if (swap_filen > -1) {
+            // lock the entry until rebuilding is done
+            lock("storeLateRelease");
+            setReleaseFlag();
+            LateReleaseStack.push(this);
+        } else {
+            destroyStoreEntry(static_cast<hash_link *>(this));
+            // "this" is no longer valid
+        }
+
+        PROF_stop(storeRelease);
         return;
     }
 
     storeLog(STORE_LOG_RELEASE, this);
-    if (swap_filen > -1 && !EBIT_TEST(flags, KEY_PRIVATE)) {
+
+    if (swap_filen > -1) {
         // log before unlink() below clears swap_filen
-        storeDirSwapLog(this, SWAP_LOG_DEL);
+        if (!EBIT_TEST(flags, KEY_PRIVATE))
+            storeDirSwapLog(this, SWAP_LOG_DEL);
+
+        unlink();
     }
 
-    Store::Root().unlink(*this);
     destroyStoreEntry(static_cast<hash_link *>(this));
     PROF_stop(storeRelease);
 }
 
 static void
-storeLateRelease(void *)
+storeLateRelease(void *unused)
 {
     StoreEntry *e;
     static int n = 0;
 
-    if (Store::Controller::store_dirs_rebuilding) {
+    if (StoreController::store_dirs_rebuilding) {
         eventAdd("storeLateRelease", storeLateRelease, NULL, 1.0, 1);
         return;
     }
@@ -1450,10 +1520,14 @@ StoreEntry::negativeCache()
 void
 storeFreeMemory(void)
 {
-    Store::FreeMemory();
+    Store::Root(NULL);
 #if USE_CACHE_DIGESTS
-    delete store_digest;
+
+    if (store_digest)
+        cacheDigestDestroy(store_digest);
+
 #endif
+
     store_digest = NULL;
 }
 
@@ -1506,12 +1580,12 @@ StoreEntry::validToSend() const
     return 1;
 }
 
-void
+bool
 StoreEntry::timestampsSet()
 {
     const HttpReply *reply = getReply();
     time_t served_date = reply->date;
-    int age = reply->header.getInt(Http::HdrType::AGE);
+    int age = reply->header.getInt(HDR_AGE);
     /* Compute the timestamp, mimicking RFC2616 section 13.2.3. */
     /* make sure that 0 <= served_date <= squid_curtime */
 
@@ -1544,14 +1618,27 @@ StoreEntry::timestampsSet()
             served_date -= (squid_curtime - request_sent);
     }
 
+    time_t exp = 0;
     if (reply->expires > 0 && reply->date > -1)
-        expires = served_date + (reply->expires - reply->date);
+        exp = served_date + (reply->expires - reply->date);
     else
-        expires = reply->expires;
+        exp = reply->expires;
 
-    lastmod = reply->last_modified;
+    if (timestamp == served_date && expires == exp) {
+        // if the reply lacks LMT, then we now know that our effective
+        // LMT (i.e., timestamp) will stay the same, otherwise, old and
+        // new modification times must match
+        if (reply->last_modified < 0 || reply->last_modified == lastModified())
+            return false; // nothing has changed
+    }
+
+    expires = exp;
+
+    lastModified_ = reply->last_modified;
 
     timestamp = served_date;
+
+    return true;
 }
 
 void
@@ -1582,7 +1669,7 @@ StoreEntry::dump(int l) const
     debugs(20, l, "StoreEntry->timestamp: " << timestamp);
     debugs(20, l, "StoreEntry->lastref: " << lastref);
     debugs(20, l, "StoreEntry->expires: " << expires);
-    debugs(20, l, "StoreEntry->lastmod: " << lastmod);
+    debugs(20, l, "StoreEntry->lastModified_: " << lastModified_);
     debugs(20, l, "StoreEntry->swap_file_sz: " << swap_file_sz);
     debugs(20, l, "StoreEntry->refcount: " << refcount);
     debugs(20, l, "StoreEntry->flags: " << storeEntryFlags(this));
@@ -1664,21 +1751,14 @@ StoreEntry::createMemObject(const char *aUrl, const char *aLogUrl, const HttpReq
     mem_obj->setUris(aUrl, aLogUrl, aMethod);
 }
 
-/** disable sending content to the clients.
- *
- * This just sets DELAY_SENDING.
- */
+/* this just sets DELAY_SENDING */
 void
 StoreEntry::buffer()
 {
     EBIT_SET(flags, DELAY_SENDING);
 }
 
-/** flush any buffered content.
- *
- * This just clears DELAY_SENDING and Invokes the handlers
- * to begin sending anything that may be buffered.
- */
+/* this just clears DELAY_SENDING and Invokes the handlers */
 void
 StoreEntry::flush()
 {
@@ -1720,7 +1800,7 @@ StoreEntry::reset()
     mem_obj->reset();
     HttpReply *rep = (HttpReply *) getReply();       // bypass const
     rep->reset();
-    expires = lastmod = timestamp = -1;
+    expires = lastModified_ = timestamp = -1;
 }
 
 /*
@@ -1839,9 +1919,12 @@ StoreEntry::replaceHttpReply(HttpReply *rep, bool andStartWriting)
 void
 StoreEntry::startWriting()
 {
-    /* TODO: when we store headers separately remove the header portion */
+    Packer p;
+
+    /* TODO: when we store headers serparately remove the header portion */
     /* TODO: mark the length of the headers ? */
     /* We ONLY want the headers */
+    packerToStoreInit(&p, this);
 
     assert (isEmpty());
     assert(mem_obj);
@@ -1849,13 +1932,13 @@ StoreEntry::startWriting()
     const HttpReply *rep = getReply();
     assert(rep);
 
-    buffer();
-    rep->packHeadersInto(this);
+    rep->packHeadersInto(&p);
     mem_obj->markEndOfReplyHeaders();
     EBIT_CLR(flags, ENTRY_FWD_HDR_WAIT);
 
-    rep->body.packInto(this);
-    flush();
+    rep->body.packInto(&p);
+
+    packerClean(&p);
 }
 
 char const *
@@ -1890,7 +1973,7 @@ StoreEntry::transientsAbandonmentCheck()
 }
 
 void
-StoreEntry::memOutDecision(const bool)
+StoreEntry::memOutDecision(const bool willCacheInRam)
 {
     transientsAbandonmentCheck();
 }
@@ -1927,13 +2010,10 @@ StoreEntry::trimMemory(const bool preserveSwappable)
 }
 
 bool
-StoreEntry::modifiedSince(HttpRequest * request) const
+StoreEntry::modifiedSince(const time_t ims, const int imslen) const
 {
     int object_length;
-    time_t mod_time = lastmod;
-
-    if (mod_time < 0)
-        mod_time = timestamp;
+    const time_t mod_time = lastModified();
 
     debugs(88, 3, "modifiedSince: '" << url() << "'");
 
@@ -1948,16 +2028,16 @@ StoreEntry::modifiedSince(HttpRequest * request) const
     if (object_length < 0)
         object_length = contentLen();
 
-    if (mod_time > request->ims) {
+    if (mod_time > ims) {
         debugs(88, 3, "--> YES: entry newer than client");
         return true;
-    } else if (mod_time < request->ims) {
+    } else if (mod_time < ims) {
         debugs(88, 3, "-->  NO: entry older than client");
         return false;
-    } else if (request->imslen < 0) {
+    } else if (imslen < 0) {
         debugs(88, 3, "-->  NO: same LMT, no client length");
         return false;
-    } else if (request->imslen == object_length) {
+    } else if (imslen == object_length) {
         debugs(88, 3, "-->  NO: same LMT, same length");
         return false;
     } else {
@@ -1970,7 +2050,7 @@ bool
 StoreEntry::hasEtag(ETag &etag) const
 {
     if (const HttpReply *reply = getReply()) {
-        etag = reply->header.getETag(Http::HdrType::ETAG);
+        etag = reply->header.getETag(HDR_ETAG);
         if (etag.str)
             return true;
     }
@@ -1980,14 +2060,14 @@ StoreEntry::hasEtag(ETag &etag) const
 bool
 StoreEntry::hasIfMatchEtag(const HttpRequest &request) const
 {
-    const String reqETags = request.header.getList(Http::HdrType::IF_MATCH);
+    const String reqETags = request.header.getList(HDR_IF_MATCH);
     return hasOneOfEtags(reqETags, false);
 }
 
 bool
 StoreEntry::hasIfNoneMatchEtag(const HttpRequest &request) const
 {
-    const String reqETags = request.header.getList(Http::HdrType::IF_NONE_MATCH);
+    const String reqETags = request.header.getList(HDR_IF_NONE_MATCH);
     // weak comparison is allowed only for HEAD or full-body GET requests
     const bool allowWeakMatch = !request.flags.isRanged &&
                                 (request.method == Http::METHOD_GET || request.method == Http::METHOD_HEAD);
@@ -1998,7 +2078,7 @@ StoreEntry::hasIfNoneMatchEtag(const HttpRequest &request) const
 bool
 StoreEntry::hasOneOfEtags(const String &reqETags, const bool allowWeakMatch) const
 {
-    const ETag repETag = getReply()->header.getETag(Http::HdrType::ETAG);
+    const ETag repETag = getReply()->header.getETag(HDR_ETAG);
     if (!repETag.str)
         return strListIsMember(&reqETags, "*", ',');
 
@@ -2022,13 +2102,20 @@ StoreEntry::hasOneOfEtags(const String &reqETags, const bool allowWeakMatch) con
     return matched;
 }
 
-Store::Disk &
-StoreEntry::disk() const
+SwapDir::Pointer
+StoreEntry::store() const
 {
     assert(0 <= swap_dirn && swap_dirn < Config.cacheSwap.n_configured);
-    const RefCount<Store::Disk> &sd = INDEXSD(swap_dirn);
-    assert(sd);
-    return *sd;
+    return INDEXSD(swap_dirn);
+}
+
+void
+StoreEntry::unlink()
+{
+    store()->unlink(*this); // implies disconnect()
+    swap_filen = -1;
+    swap_dirn = -1;
+    swap_status = SWAPOUT_NONE;
 }
 
 /*
@@ -2045,6 +2132,18 @@ StoreEntry::isAccepting() const
         return false;
 
     return true;
+}
+
+const char *
+StoreEntry::describeTimestamps() const
+{
+    LOCAL_ARRAY(char, buf, 256);
+    snprintf(buf, 256, "LV:%-9d LU:%-9d LM:%-9d EX:%-9d",
+             static_cast<int>(timestamp),
+             static_cast<int>(lastref),
+             static_cast<int>(lastModified_),
+             static_cast<int>(expires));
+    return buf;
 }
 
 std::ostream &operator <<(std::ostream &os, const StoreEntry &e)
@@ -2076,10 +2175,11 @@ std::ostream &operator <<(std::ostream &os, const StoreEntry &e)
     // print only set flags, using unique letters
     if (e.flags) {
         if (EBIT_TEST(e.flags, ENTRY_SPECIAL)) os << 'S';
-        if (EBIT_TEST(e.flags, ENTRY_REVALIDATE)) os << 'R';
+        if (EBIT_TEST(e.flags, ENTRY_REVALIDATE_ALWAYS)) os << 'R';
         if (EBIT_TEST(e.flags, DELAY_SENDING)) os << 'P';
         if (EBIT_TEST(e.flags, RELEASE_REQUEST)) os << 'X';
         if (EBIT_TEST(e.flags, REFRESH_REQUEST)) os << 'F';
+        if (EBIT_TEST(e.flags, ENTRY_REVALIDATE_STALE)) os << 'E';
         if (EBIT_TEST(e.flags, ENTRY_DISPATCHED)) os << 'D';
         if (EBIT_TEST(e.flags, KEY_PRIVATE)) os << 'I';
         if (EBIT_TEST(e.flags, ENTRY_FWD_HDR_WAIT)) os << 'W';

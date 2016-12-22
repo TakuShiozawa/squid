@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -33,7 +33,7 @@ DestinationDomainLookup::checkForAsync(ACLChecklist *cl) const
 }
 
 void
-DestinationDomainLookup::LookupDone(const char *, const Dns::LookupDetails &details, void *data)
+DestinationDomainLookup::LookupDone(const char *fqdn, const DnsLookupDetails &details, void *data)
 {
     ACLFilledChecklist *checklist = Filled((ACLChecklist*)data);
     checklist->markDestinationDomainChecked();
@@ -46,28 +46,28 @@ ACLDestinationDomainStrategy::match (ACLData<MatchType> * &data, ACLFilledCheckl
 {
     assert(checklist != NULL && checklist->request != NULL);
 
-    if (data->match(checklist->request->url.host())) {
+    if (data->match(checklist->request->GetHost())) {
         return 1;
     }
 
     if (flags.isSet(ACL_F_NO_LOOKUP)) {
-        debugs(28, 3, "No-lookup DNS ACL '" << AclMatchedName << "' for " << checklist->request->url.host());
+        debugs(28, 3, "aclMatchAcl:  No-lookup DNS ACL '" << AclMatchedName << "' for '" << checklist->request->GetHost() << "'");
         return 0;
     }
 
     /* numeric IPA? no, trust the above result. */
-    if (!checklist->request->url.hostIsNumeric()) {
+    if (checklist->request->GetHostIsNumeric() == 0) {
         return 0;
     }
 
     /* do we already have the rDNS? match on it if we do. */
     if (checklist->dst_rdns) {
-        debugs(28, 3, "'" << AclMatchedName << "' match with stored rDNS '" << checklist->dst_rdns << "' for " << checklist->request->url.host());
+        debugs(28, 3, "aclMatchAcl: '" << AclMatchedName << "' match with stored rDNS '" << checklist->dst_rdns << "' for '" << checklist->request->GetHost() << "'");
         return data->match(checklist->dst_rdns);
     }
 
     /* raw IP without rDNS? look it up and wait for the result */
-    const ipcache_addrs *ia = ipcacheCheckNumeric(checklist->request->url.host());
+    const ipcache_addrs *ia = ipcacheCheckNumeric(checklist->request->GetHost());
     if (!ia) {
         /* not a valid IPA */
         checklist->dst_rdns = xstrdup("invalid");
@@ -82,7 +82,7 @@ ACLDestinationDomainStrategy::match (ACLData<MatchType> * &data, ACLFilledCheckl
         return data->match(fqdn);
     } else if (!checklist->destinationDomainChecked()) {
         /* FIXME: Using AclMatchedName here is not OO correct. Should find a way to the current acl */
-        debugs(28, 3, "Can't yet compare '" << AclMatchedName << "' ACL for " << checklist->request->url.host());
+        debugs(28, 3, "aclMatchAcl: Can't yet compare '" << AclMatchedName << "' ACL for '" << checklist->request->GetHost() << "'");
         if (checklist->goAsync(DestinationDomainLookup::Instance()))
             return -1;
         // else fall through to "none" match, hiding the lookup failure (XXX)

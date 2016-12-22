@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -39,12 +39,6 @@ public:
         reference (p);
     }
 
-#if __cplusplus >= 201103L
-    RefCount (RefCount &&p) : p_(std::move(p.p_)) {
-        p.p_=NULL;
-    }
-#endif
-
     RefCount& operator = (const RefCount& p) {
         // DO NOT CHANGE THE ORDER HERE!!!
         // This preserves semantics on self assignment
@@ -53,18 +47,6 @@ public:
         dereference(newP_);
         return *this;
     }
-
-#if __cplusplus >= 201103L
-    RefCount& operator = (RefCount&& p) {
-        if (this != &p) {
-            dereference(p.p_);
-            p.p_ = NULL;
-        }
-        return *this;
-    }
-#endif
-
-    explicit operator bool() const { return p_; }
 
     bool operator !() const { return !p_; }
 

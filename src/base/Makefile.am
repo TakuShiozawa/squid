@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -19,20 +19,12 @@ libbase_la_SOURCES = \
 	AsyncJobCalls.h \
 	AsyncCallQueue.cc \
 	AsyncCallQueue.h \
-	ByteCounter.h \
-	CbcPointer.h \
-	CbDataList.h \
 	CharacterSet.h \
 	CharacterSet.cc \
-	EnumIterator.h \
+	CbcPointer.h \
 	InstanceId.h \
 	Lock.h \
-	LookupTable.h \
 	LruMap.h \
-	Packable.h \
-	PackableStream.h \
-	RegexPattern.cc \
-	RegexPattern.h \
 	RunnersRegistry.cc \
 	RunnersRegistry.h \
 	Subscription.h \

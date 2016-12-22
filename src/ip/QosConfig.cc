@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,22 +21,6 @@
 #include "Parsing.h"
 
 #include <cerrno>
-
-CBDATA_CLASS_INIT(acl_tos);
-
-acl_tos::~acl_tos()
-{
-    aclDestroyAclList(&aclList);
-    delete next;
-}
-
-CBDATA_CLASS_INIT(acl_nfmark);
-
-acl_nfmark::~acl_nfmark()
-{
-    aclDestroyAclList(&aclList);
-    delete next;
-}
 
 void
 Ip::Qos::getTosFromServer(const Comm::ConnectionPointer &server, fde *clientFde)
@@ -133,7 +117,7 @@ void Ip::Qos::getNfmarkFromServer(const Comm::ConnectionPointer &server, const f
 
 #if USE_LIBNETFILTERCONNTRACK
 int
-Ip::Qos::getNfMarkCallback(enum nf_conntrack_msg_type,
+Ip::Qos::getNfMarkCallback(enum nf_conntrack_msg_type type,
                            struct nf_conntrack *ct,
                            void *data)
 {
@@ -408,7 +392,7 @@ Ip::Qos::Config::dumpConfigLine(char *entry, const char *name) const
         if (tosMiss > 0) {
             p += snprintf(p, 11, " miss=0x%02X", tosMiss);
             if (tosMissMask!=0xFFU) {
-                p += snprintf(p, 6, "/0x%02X", markMissMask);
+                p += snprintf(p, 6, "/0x%02X", tosMissMask);
             }
         }
         if (preserveMissTos == 0) {

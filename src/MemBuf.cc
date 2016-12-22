@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -72,7 +72,7 @@
  */
 
 #include "squid.h"
-#include "mem/forward.h"
+#include "Mem.h"
 #include "MemBuf.h"
 #include "profiler/Profiler.h"
 
@@ -222,7 +222,7 @@ void MemBuf::truncate(mb_size_t tailSize)
  * calls memcpy, appends exactly size bytes,
  * extends buffer or creates buffer if needed.
  */
-void MemBuf::append(const char *newContent, int sz)
+void MemBuf::append(const char *newContent, mb_size_t sz)
 {
     assert(sz >= 0);
     assert(buf || (0==capacity && 0==size));
@@ -262,11 +262,21 @@ void MemBuf::terminate()
     *space() = '\0';
 }
 
+/* calls memBufVPrintf */
+void
+MemBuf::Printf(const char *fmt,...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vPrintf(fmt, args);
+    va_end(args);
+}
+
 /**
- * vappendf for other printf()'s to use; calls vsnprintf, extends buf if needed
+ * vPrintf for other printf()'s to use; calls vsnprintf, extends buf if needed
  */
 void
-MemBuf::vappendf(const char *fmt, va_list vargs)
+MemBuf::vPrintf(const char *fmt, va_list vargs)
 {
 #ifdef VA_COPY
     va_list ap;
@@ -387,6 +397,10 @@ void
 memBufReport(MemBuf * mb)
 {
     assert(mb);
-    mb->appendf("memBufReport is not yet implemented @?@\n");
+    mb->Printf("memBufReport is not yet implemented @?@\n");
 }
+
+#if !_USE_INLINE_
+#include "MemBuf.cci"
+#endif
 

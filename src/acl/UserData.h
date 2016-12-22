@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -8,7 +8,6 @@
 
 #ifndef SQUID_ACLUSERDATA_H
 #define SQUID_ACLUSERDATA_H
-
 #include "acl/Acl.h"
 #include "acl/Data.h"
 #include "SBuf.h"
@@ -17,9 +16,10 @@
 
 class ACLUserData : public ACLData<char const *>
 {
-    MEMPROXY_CLASS(ACLUserData);
 
 public:
+    MEMPROXY_CLASS(ACLUserData);
+
     virtual ~ACLUserData() {}
     ACLUserData();
     bool match(char const *user);
@@ -39,6 +39,8 @@ private:
     } flags;
 
 };
+
+MEMPROXY_CLASS_INLINE(ACLUserData);
 
 #endif /* SQUID_ACLUSERDATA_H */
 

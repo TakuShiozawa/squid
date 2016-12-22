@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,10 +12,9 @@
 #include "anyp/PortCfg.h"
 #include "base/Subscription.h"
 #include "client_side.h"
-#include "fatal.h"
+#include "disk.h"
 #include "fde.h"
 #include "fqdncache.h"
-#include "fs_io.h"
 #include "htcp.h"
 #include "ICP.h"
 #include "ip/Intercept.h"
@@ -27,7 +26,7 @@
 #include "SquidConfig.h"
 #include "SquidMath.h"
 #include "SquidTime.h"
-#include "store/Disks.h"
+#include "SwapDir.h"
 #include "tools.h"
 #include "wordlist.h"
 
@@ -361,12 +360,8 @@ void
 BroadcastSignalIfAny(int& sig)
 {
     if (sig > 0) {
-        if (IamMasterProcess()) {
-            for (int i = TheKids.count() - 1; i >= 0; --i) {
-                Kid& kid = TheKids.get(i);
-                kill(kid.getPid(), sig);
-            }
-        }
+        if (IamCoordinatorProcess())
+            Ipc::Coordinator::Instance()->broadcastSignal(sig);
         sig = -1;
     }
 }
@@ -403,6 +398,48 @@ debug_trap(const char *message)
     _db_print("WARNING: %s\n", message);
 }
 
+void
+sig_child(int sig)
+{
+#if !_SQUID_WINDOWS_
+#if _SQUID_NEXT_
+    union wait status;
+#else
+
+    int status;
+#endif
+
+    pid_t pid;
+
+    do {
+#if _SQUID_NEXT_
+        pid = wait3(&status, WNOHANG, NULL);
+#else
+
+        pid = waitpid(-1, &status, WNOHANG);
+#endif
+        /* no debugs() here; bad things happen if the signal is delivered during _db_print() */
+#if HAVE_SIGACTION
+
+    } while (pid > 0);
+
+#else
+
+    }
+
+    while (pid > 0 || (pid < 0 && errno == EINTR));
+    signal(sig, sig_child);
+
+#endif
+#endif
+}
+
+void
+sig_shutdown(int sig)
+{
+    shutting_down = 1;
+}
+
 const char *
 getMyHostname(void)
 {
@@ -421,6 +458,13 @@ getMyHostname(void)
 
     if (HttpPortList != NULL && sa.isAnyAddr())
         sa = HttpPortList->s;
+
+#if USE_OPENSSL
+
+    if (HttpsPortList != NULL && sa.isAnyAddr())
+        sa = HttpsPortList->s;
+
+#endif
 
     /*
      * If the first http_port address has a specific address, try a
@@ -678,10 +722,10 @@ NumberOfKids()
     return (needCoord ? 1 : 0) + Config.workers + rockDirs;
 }
 
-SBuf
+String
 ProcessRoles()
 {
-    SBuf roles;
+    String roles = "";
     if (IamMasterProcess())
         roles.append(" master");
     if (IamCoordinatorProcess())
@@ -701,6 +745,9 @@ writePidFile(void)
     mode_t old_umask;
     char buf[32];
 
+    if (!IamPrimaryProcess())
+        return;
+
     if ((f = Config.pidFilename) == NULL)
         return;
 
@@ -711,7 +758,7 @@ writePidFile(void)
 
     old_umask = umask(022);
 
-    fd = open(f, O_WRONLY | O_CREAT | O_TRUNC | O_TEXT, 0644);
+    fd = file_open(f, O_WRONLY | O_CREAT | O_TRUNC | O_TEXT);
 
     umask(old_umask);
 
@@ -724,19 +771,8 @@ writePidFile(void)
     }
 
     snprintf(buf, 32, "%d\n", (int) getpid());
-    const size_t ws = write(fd, buf, strlen(buf));
-    assert(ws == strlen(buf));
-    close(fd);
-}
-
-void
-removePidFile()
-{
-    if (Config.pidFilename && strcmp(Config.pidFilename, "none") != 0) {
-        enter_suid();
-        safeunlink(Config.pidFilename, 0);
-        leave_suid();
-    }
+    FD_WRITE_METHOD(fd, buf, strlen(buf));
+    file_close(fd);
 }
 
 pid_t
@@ -955,13 +991,24 @@ logsFlush(void)
 }
 
 void
+kb_incr(kb_t * k, size_t v)
+{
+    k->bytes += v;
+    k->kb += (k->bytes >> 10);
+    k->bytes &= 0x3FF;
+}
+
+void
 debugObj(int section, int level, const char *label, void *obj, ObjPackMethod pm)
 {
-    assert(label && obj && pm);
     MemBuf mb;
+    Packer p;
+    assert(label && obj && pm);
     mb.init();
-    (*pm) (obj, &mb);
+    packerToMemInit(&p, &mb);
+    (*pm) (obj, &p);
     debugs(section, level, "" << label << "" << mb.buf << "");
+    packerClean(&p);
     mb.clean();
 }
 
@@ -1071,6 +1118,16 @@ getMyPort(void)
         if (p != NULL)
             return p->s.port();
     }
+
+#if USE_OPENSSL
+    if ((p = HttpsPortList) != NULL) {
+        // skip any special interception ports
+        while (p != NULL && p->flags.isIntercepted())
+            p = p->next;
+        if (p != NULL)
+            return p->s.port();
+    }
+#endif
 
     if ((p = FtpPortList) != NULL) {
         // skip any special interception ports
@@ -1190,19 +1247,5 @@ restoreCapabilities(bool keep)
 #elif _SQUID_LINUX_
     Ip::Interceptor.StopTransparency("Missing needed capability support.");
 #endif /* HAVE_SYS_CAPABILITY_H */
-}
-
-pid_t
-WaitForOnePid(pid_t pid, PidStatus &status, int flags)
-{
-#if _SQUID_NEXT_
-    if (pid < 0)
-        return wait3(&status, flags, NULL);
-    return wait4(cpid, &status, flags, NULL);
-#elif _SQUID_WINDOWS_
-    return 0; // function not used on Windows
-#else
-    return waitpid(pid, &status, flags);
-#endif
 }
 

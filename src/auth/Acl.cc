@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,7 +13,6 @@
 #include "auth/AclProxyAuth.h"
 #include "auth/UserRequest.h"
 #include "client_side.h"
-#include "fatal.h"
 #include "HttpRequest.h"
 
 /**
@@ -28,7 +27,7 @@ AuthenticateAcl(ACLChecklist *ch)
 {
     ACLFilledChecklist *checklist = Filled(ch);
     HttpRequest *request = checklist->request;
-    Http::HdrType headertype;
+    http_hdr_type headertype;
 
     if (NULL == request) {
         fatal ("requiresRequest SHOULD have been true for this ACL!!");
@@ -42,13 +41,13 @@ AuthenticateAcl(ACLChecklist *ch)
             return ACCESS_DENIED;
     } else if (request->flags.accelerated) {
         /* WWW authorization on accelerated requests */
-        headertype = Http::HdrType::AUTHORIZATION;
+        headertype = HDR_AUTHORIZATION;
     } else if (request->flags.intercepted || request->flags.interceptTproxy) {
         debugs(28, DBG_IMPORTANT, "NOTICE: Authentication not applicable on intercepted requests.");
         return ACCESS_DENIED;
     } else {
         /* Proxy authorization on proxy requests */
-        headertype = Http::HdrType::PROXY_AUTHORIZATION;
+        headertype = HDR_PROXY_AUTHORIZATION;
     }
 
     /* get authed here */

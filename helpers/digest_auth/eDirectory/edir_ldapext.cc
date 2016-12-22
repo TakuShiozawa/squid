@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -155,6 +155,10 @@ static int berEncodeLoginData(
     size_t   putDataLen,
     void     *putData)
 {
+    int err = 0;
+    BerElement *requestBer = NULL;
+
+    unsigned int i;
     unsigned int elemCnt = methodIDLen / sizeof(unsigned int);
 
     char    *utf8ObjPtr=NULL;
@@ -170,56 +174,45 @@ static int berEncodeLoginData(
     utf8TagSize = strlen(utf8TagPtr)+1;
 
     /* Allocate a BerElement for the request parameters. */
-    BerElement *requestBer = ber_alloc();
-    if (!requestBer)
-        return LDAP_ENCODING_ERROR;
+    if ((requestBer = ber_alloc()) == NULL) {
+        err = LDAP_ENCODING_ERROR;
+        return err;
+    }
 
     /* BER encode the NMAS Version and the objectDN */
-    if (ber_printf(requestBer, "{io", NMAS_LDAP_EXT_VERSION, utf8ObjPtr, utf8ObjSize) < 0) {
-        ber_free(requestBer, 1);
-        return LDAP_ENCODING_ERROR;
-    }
+    err = (ber_printf(requestBer, "{io", NMAS_LDAP_EXT_VERSION, utf8ObjPtr, utf8ObjSize) < 0) ? LDAP_ENCODING_ERROR : 0;
 
     /* BER encode the MethodID Length and value */
-    if (ber_printf(requestBer, "{i{", methodIDLen) < 0) {
-        ber_free(requestBer, 1);
-        return LDAP_ENCODING_ERROR;
+    if (!err) {
+        err = (ber_printf(requestBer, "{i{", methodIDLen) < 0) ? LDAP_ENCODING_ERROR : 0;
     }
 
-    for (unsigned int i = 0; i < elemCnt; ++i) {
-        if (ber_printf(requestBer, "i", methodID[i]) < 0) {
-            ber_free(requestBer, 1);
-            return LDAP_ENCODING_ERROR;
-        }
+    for (i = 0; !err && i < elemCnt; ++i) {
+        err = (ber_printf(requestBer, "i", methodID[i]) < 0) ? LDAP_ENCODING_ERROR : 0;
     }
 
-    if (ber_printf(requestBer, "}}", 0) < 0) {
-        ber_free(requestBer, 1);
-        return LDAP_ENCODING_ERROR;
+    if (!err) {
+        err = (ber_printf(requestBer, "}}", 0) < 0) ? LDAP_ENCODING_ERROR : 0;
     }
 
     if (putData) {
         /* BER Encode the the tag and data */
-        if (ber_printf(requestBer, "oio}", utf8TagPtr, utf8TagSize, putDataLen, putData, putDataLen) < 0) {
-            ber_free(requestBer, 1);
-            return LDAP_ENCODING_ERROR;
-        }
+        err = (ber_printf(requestBer, "oio}", utf8TagPtr, utf8TagSize, putDataLen, putData, putDataLen) < 0) ? LDAP_ENCODING_ERROR : 0;
     } else {
         /* BER Encode the the tag */
-        if (ber_printf(requestBer, "o}", utf8TagPtr, utf8TagSize) < 0) {
-            ber_free(requestBer, 1);
-            return LDAP_ENCODING_ERROR;
-        }
+        err = (ber_printf(requestBer, "o}", utf8TagPtr, utf8TagSize) < 0) ? LDAP_ENCODING_ERROR : 0;
     }
 
     /* Convert the BER we just built to a berval that we'll send with the extended request. */
-    if (static_cast<ber_tag_t>(ber_flatten(requestBer, requestBV)) == LBER_ERROR) {
-        ber_free(requestBer, 1);
-        return LDAP_ENCODING_ERROR;
+    if (!err && (ber_tag_t)ber_flatten(requestBer, requestBV) == LBER_ERROR) {
+        err = LDAP_ENCODING_ERROR;
     }
 
-    ber_free(requestBer, 1);
-    return 0; /* no error */
+    if (requestBer) {
+        ber_free(requestBer, 1);
+    }
+
+    return err;
 }
 
 /**********************************************************************

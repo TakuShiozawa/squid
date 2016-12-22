@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,12 +11,12 @@
 #include "squid.h"
 #include "base/RunnersRegistry.h"
 #include "base/TextException.h"
+#include "disk.h"
 #include "DiskIO/IORequestor.h"
 #include "DiskIO/IpcIo/IpcIoFile.h"
 #include "DiskIO/ReadRequest.h"
 #include "DiskIO/WriteRequest.h"
 #include "fd.h"
-#include "fs_io.h"
 #include "globals.h"
 #include "ipc/mem/Pages.h"
 #include "ipc/Messages.h"
@@ -113,7 +113,8 @@ IpcIoFile::open(int flags, mode_t mode, RefCount<IORequestor> callback)
             IpcIoFiles.insert(std::make_pair(diskId, this)).second;
         Must(inserted);
 
-        queue->localRateLimit().store(config.ioRate);
+        queue->localRateLimit() =
+            static_cast<Ipc::QueueReader::Rate::Value>(config.ioRate);
 
         Ipc::HereIamMessage ann(Ipc::StrandCoord(KidIdentifier, getpid()));
         ann.strand.tag = dbName;
@@ -395,7 +396,7 @@ IpcIoFile::canWait() const
     const int oldestWait = tvSubMsec(oldestIo.start, current_time);
 
     int rateWait = -1; // time in millisecons
-    const int ioRate = queue->rateLimit(diskId).load();
+    const Ipc::QueueReader::Rate::Value ioRate = queue->rateLimit(diskId);
     if (ioRate > 0) {
         // if there are N requests pending, the new one will wait at
         // least N/max-swap-rate seconds
@@ -749,7 +750,7 @@ IpcIoFile::DiskerHandleMoreRequests(void *source)
 bool
 IpcIoFile::WaitBeforePop()
 {
-    const int ioRate = queue->localRateLimit().load();
+    const Ipc::QueueReader::Rate::Value ioRate = queue->localRateLimit();
     const double maxRate = ioRate/1e3; // req/ms
 
     // do we need to enforce configured I/O rate?
@@ -889,7 +890,7 @@ IpcIoFile::DiskerHandleRequest(const int workerId, IpcIoMsg &ipcIo)
 }
 
 static bool
-DiskerOpen(const SBuf &path, int flags, mode_t)
+DiskerOpen(const SBuf &path, int flags, mode_t mode)
 {
     assert(TheFile < 0);
 

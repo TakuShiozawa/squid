@@ -1,76 +1,151 @@
-Changes to squid-4.0.3 (28 Nov 2015):
+Changes to squid-3.5.23 (16 Dec 2016):
 
-	- Bug 4372: missing template files
-	- Bug 4371: compile errors: no such file or directory: DiskIO/*/*DiskIOModule.o
-	- Bug 4368: A simpler and more robust HTTP request line parser
-	- Fix compile erorr on clang undefined reference to '__atomic_load_8'
-	- ext_kerberos_ldap_group_acl: Add missing workarounds for Heimdal Kerberos
-	- ext_ldap_group_acl: Allow unlimited LDAP search filter
-	- ext_unix_group_acl: Support -r parameter to strip @REALM from usernames
-	- ... and much code cleanup and polishing
-	- ... and all fixes from squid 3.5.11
+	- Bug 4627: fix generate-host-certificates and dynamic_cert_mem_cache_size docs
+	- Bug 4620: NetBSD build error with --enable-ipf-transparent
+	- Bug 4567: Strange IPv6 shown in access.log
+	- Bug 4406: SIGSEV in TunnelStateData::handleConnectResponse() during reconfigure and restart
+	- Bug 4174 partial: fix Write.cc:41 "!ccb->active()" assertion.
+	- Bug 4169: HIT marked as MISS when If-None-Match does not match
+	- Bug 4007: Hang on DNS query with dead-end CNAME
+	- Bug 4004 partial: Fix segfault via Ftp::Client::readControlReply
+	- Bug 3940 partial: hostHeaderVerify failures MISS when they should be HIT
+	- Bug 3533: Cache still valid after HTTP/1.1 303 See Other
+	- Bug 3379: Combination of If-Match and a Cache Hit result in TCP Connection Failure
+	- Bug 3290: authenticate_ttl not working for digest authentication
+	- Bug 2258: bypassing cache but not destroying cache entry
+	- HTTP/1.1: make Vary:* objects cacheable
+	- HTTP/1.1: Add registered codes entry for new 103 (Early Hints) status code
+	- Support IPv6 NAT with PF for NetBSD and FreeBSD
+	- TLS: Make key= before cert= an error instead of quietly hiding the issue
+	- ... and some debug updates
+	- ... and some build fixes
+	- ... and several documentation updates
 
-Changes to squid-4.0.2 (01 Nov 2015):
+Changes to squid-3.5.22 (09 Oct 2016):
 
-	- Regression Bug 4351: compile errors when authentication modules disabled
-	- Regression fix: HTTP/1.1 Transfer-Encoding:chunked parsing
-	- Bug 4359: assertion failure 'Comm::IsConnOpen(conn)' within ConnStateData::requestTimeout
-	- Bug 4356: segmentation fault using proxy_auth ACL
-	- Bug 4352: compile errors in OS X 10.11
-	- Bug 4021: ext_user_regex does exact match
-	- Bug 3574: avoid crashes, prohibit reconfiguration during shutdown
-	- Support re-assigning delay pools based on HTTP reply details
-	- ... and all fixes from squid 3.5.11
+	- Bug 4594: build failure with clang 3.9
+	- Bug 4471: revalidation does not work when expired cached object lacks Last-Modified
+	- Bug 4302 pt2: IPv6 support for IPFilter v5 transparent interception
+	- Bug 4228: ./configure bug/typo in r14394
+	- Bug 3819: "fd >= 0" assertion in file_write() during reconfiguration
+	- Bug 2833: Collapse internal revalidation requests (SMP-unaware caches)
+	- Fix logged request size (%http::>st) and other size-related %codes
+	- Fix some memory leaks from putenv()
+	- Fix memory leaks from url_rewrite_extras and store_id_extras on reconfigure/shutdown
+	- Fix segfault crash when debugging section 4 at level 9
+	- HTTP: MUST ignore a [revalidation] response with an older Date header
 
-Changes to squid-4.0.1 (14 Oct 2015):
+Changes to squid-3.5.21 (08 Sep 2016):
 
-	- Bug 4329: GCC 5.2 no known conversion for argument
-	- Bug 4292: negotiate_wrapper: Unreleased Resources
-	- Bug 4269: ignore-must-revalidate broken
-	- Bug 4190: assertion 'hash_remove_link' from Auth::User::cacheCleanup
-	- Bug 3920: Splay::remove() reference counting inconsistent
-	- Bug 3069: CONNECT method bytes sent logging
-	- Bug 2741 partial: libsecurity API for GnuTLS support
-	- Bug 1961 partial: redesign of URL handling
-	- Fix crash when parsing invalid squid.conf
-	- Fix eCAP: Return 'unknown body size' for bodies with unknown body sizes
-	- Remove unused OS detection: Sun, SysV, Ultrix, BSDi
-	- Remove cache_peer_domain directive
-	- RFC 6176 compliance: Remove SSLv2 support
-	- HTTP/1.1: Remove refresh_pattern ignore-auth and ignore-must-revalidate
-	- Remove GCC 2.x and 3.x detection and support
-	- C++11 compiler support is now mandatory
-	- Enable flexible transport protocol
-	- Enable long (--foo) command line parameters on squid binary
-	- Add per-rule refresh_pattern matching statistics
-	- Replace sslversion=N with tls-min-version=1.N
-	- Replace sslproxy_* directives with tls_outgoing_options
-	- Replace GNU atomics and related hacks with C++11 std::atomic
-	- Replace external_acl_type format %macros with logformat codes
-	- Support Ephemeral Elliptic Curve Diffie-Hellman (EECDH) key exchange
-	- Support Secure ICAP services
-	- Support rotate=N option on access_log
-	- Support bypass for non-HTTP intercepted traffic (on_unsupported_protocol)
-	- Support lifetime timeout for persistent connections (pconn_lifetime)
-	- Support timeout for URL-rewrite helper lookups (url_rewrite_timeout)
-	- Support logging fast things (nanosecond log resolution)
-	- Support ICAP/eCAP adaptation for 100-continue responses
-	- Support configurable helper queue size, with consistent defaults
-	     and better overflow handling.
-	- Support named service PID file by default (pid_filename)
-	- url_lfs_rewrite: Add URL-rewriter based on local file existence
-	- negotiate_kerberos_auth: output group= kv-pair
-	- helper-mux: add man(8) page
-	- purge: convert README to man(1) page
-	- basic_msnt_multi_domain_auth: Superceeded by basic_smb_lm_auth
-	- basic_sspi_auth: fix MinGW compile errors
-	- negotiate_sspi_auth: fix various build errors
-	- Crypto-NG: libnettle Base64 algorithm support
-	- Parser-NG: HTTP Parser structural redesign
-	- libltdl: copyright updated to LGPL version 2.1
-	- ... and several performance optimizations
-	- ... and many documentation changes
-	- ... and much code cleanup and polishing
+	- Bug 4563: duplicate code in httpMakeVaryMark
+	- Bug 4542: authentication credentials IP TTL updated incorrectly
+	- Bug 4534: assertion failure in xcalloc when using many cache_dir
+	- Bug 4428: mal-formed Cache-Control:stale-if-error header
+	- Bug 3025: Proxy-Authenticate problem using ICAP server
+	- Fix segfault via Ftp::Client::readControlReply()
+	- Fix SSL-Bump failure results in SEGFAULT
+	- HTTP/1.1: MUST always revalidate Cache-Control:no-cache responses
+	- HTTP/1.1: do not allow Proxy-Connection to override Connection header
+	- SSL: CN wildcard must only match a single domain component [fragment]
+
+Changes to squid-3.5.20 (01 Jul 2016):
+
+	- Bug 4523: smblib compile fails on NetBSD
+	- Bug 4485: off-by-one out-of-bounds Parser::Tokenizer::int64() read errors
+	- Bug 3579: assertion failed 'MemPools[type]' from dst_as ACL
+	- Fix icons loading speed
+	- Fix OpenSSL detection on FreeBSD
+	- Fix assertion failed: Write.cc:38: 'fd_table[conn->fd].flags.open'
+	- Fix SEGFAULT parsing malformed adaptation service configuration
+	- Fix ConnStateData::In::maybeMakeSpaceAvailable() logic
+	- Do not override user defined -std option
+	- Do not allow low-level debugging to hide important/critical messages
+	- Do not make bogus recvmsg(2) calls when closing UDS sockets
+	- Support unified EUI format code in external_acl_type
+
+Changes to squid-3.5.19 (09 May 2016):
+
+	- Regression Bug 4515: interception proxy hangs
+
+Changes to squid-3.5.18 (06 May 2016):
+
+	- Bug 4510: stale comment about 32KB limit on shared memory cache entries
+	- Bug 4509: EUI compile error on NetBSD
+	- Bug 4501: HTTP/1.1: normalize Host header
+	- Bug 4498: URL-unescape the login-info after extraction from URI
+	- Bug 4455: SegFault from ESIInclude::Start
+	- Prevent Squid forcing -b 2048 into the arguments for sslcrtd_program
+	- Fix TLS/SSL server handshake alert handling
+
+Changes to squid-3.5.17 (20 Apr 2016):
+
+	- Regression Bug 4480: logformat [.width_max]
+	- Regression Bug 4481: varyEvaluateMatch: Oops. Not a Vary match on second attempt
+	- Bug 4495: Unknown SSL option SSL_OP_NO_TICKET
+	- Bug 4493: theObject->sharedMemorySize() == theSegment.size() exception
+	- Bug 4483: ./configure garbles -Og option in CFLAGS
+	- Bug 4482: Solaris GCC 5.2 warning in src/ip/Intercept.cc
+	- Bug 4468: NotNode (!acl) naming: Terminate the name before strncat(name).
+	- Bug 4465: Header forgery detection leads to crash
+	- Bug 2460 partial: workaround deferred reads on shutdown and restart
+	- cachemgr.cgi: use dynamic MemBuf for internal content generation
+	- ESI: Fix several element construction issues
+	- TLS: Fix Handshake Error: ccs received early
+	- TLS: Add chained and signing cert to peek-then-bumped connections
+	- Fix some startup/shutdown crashes
+
+Changes to squid-3.5.16 (02 Apr 2016):
+
+	- Bug 4476: Removed duplicated #include lines
+	- Bug 4452: squid -z segfaults with ufs
+	- Bug 4447:FwdState.cc:447 "serverConnection() == conn" assertion
+	- Bug 4423: adding stdio: prefix to cache_log directive produces FATAL error
+	- Bug 4409: compile error when two Heimdal libraries are installed
+	- Bug 2831: Cache-control: max-age not sent on TCP_IMS_HIT/304
+	- pinger: Fix buffer overflow in Icmp6::Recv
+	- pinger: Fix select(2) to actually use max_fd
+	- pinger: drop capabilities on Linux
+	- Fix memory leak of HttpRequest objects
+	- Fix memory leak when the cache of sslcrtvalidator_program is disabled via ttl=0
+	- Fix assertion failed: Write.cc:41: "!ccb->active()"
+	- Fix crash on shutdown while cleaning up idle ICAP connections
+	- RFC 7725: Add registry entry for 451 status text
+	- ... and some build issues
+
+Changes to squid-3.5.15 (23 Feb 2016):
+
+	- Bug 3870: assertion failed: String.cc: 'len_ + len <65536' in ESI::CustomParser
+	- Fix multiple assertion on String overflows
+	- Fix unit test errors on MacOS
+	- Better handling of huge response headers. Fewer incorrect "Bug #3279" messages.
+	- Log noise reduction for eCAP
+
+Changes to squid-3.5.14 (16 Feb 2016):
+
+	- Bug 4437: Fix Segfault on Certain SSL Handshake Errors
+	- Bug 4431: C code is not compiled with CFLAGS
+	- Bug 4418: FlexibleArray compile error with GCC 6
+	- Bug 4378: assertion failed: DestinationIp.cc:60:
+		'checklist->conn() && checklist->conn()->clientConnection != NULL'
+	- Fix invalid FTP connection handling on blocked content
+	- Fix handling of shared memory left over by Squid crashes or bugs
+	- Fix mgr:config report 'qos_flows mark' output
+	- Fix compile error in CPU affinity
+	- Fix %un logging external ACL username
+	- Avoid more certificate validation memory leaks
+	- ... and some documentation updates
+
+Changes to squid-3.5.13 (06 Jan 2016):
+
+	- Bug 4397: DragonFly BSD, POSIX shared memory is implemented as filepath
+	- Bug 4387: Kerberos build errors on Solaris
+	- TLS: Support Ephemeral Elliptic Curve Diffie-Hellman (EECDH) key exchange
+	- TLS: Complete certificate chains using external intermediate certificates
+	- Avoid memory leaks when an X.509 certificate validator is used with SslBump
+	- Fix connection retry and fallback after failed server TLS connections
+	- Fix GnuTLS detection via pkg-config
+	- Fix startup crash with a misconfigured (too-small) shared memory cache
+	- ... and some documentation updates
 
 Changes to squid-3.5.12 (28 Nov 2015):
 
@@ -103,7 +178,7 @@ Changes to squid-3.5.10 (01 Oct 2015):
 	- Bug 4323: Netfilter broken cross-includes with Linux 4.2
 	- Bug 4328: %un format code does not work for external ACLs in credentials-fetching rules
 	- Bug 4208: more than one port in wccp2_service_info line causes error
-	- Bug 4303: PeerConnector.cc:743 "!callback" assertion.
+	- Bug 4304: PeerConnector.cc:743 "!callback" assertion.
 	- Bug 4330: Do not use SSL_METHOD::put_cipher_by_char to determine size of SSL hello ciphers
 	- Relicense ntlm_fake_auth.pl to GPLv2+
 	- Relicense smb_lm auth helper to GPLv2+

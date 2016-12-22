@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,7 +12,6 @@
 #include "acl/CertificateData.h"
 #include "acl/Checklist.h"
 #include "cache_cf.h"
-#include "ConfigParser.h"
 #include "Debug.h"
 #include "wordlist.h"
 
@@ -93,7 +92,7 @@ void
 ACLCertificateData::parse()
 {
     if (validAttributesStr) {
-        char *newAttribute = ConfigParser::strtokFile();
+        char *newAttribute = strtokFile();
 
         if (!newAttribute) {
             if (attributeIsOptional)

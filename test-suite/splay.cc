@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,14 +12,14 @@
  */
 
 #include "squid.h"
-#include "splay.h"
-#include "util.h"
 
 #include <cstdlib>
 #if HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#include <random>
+
+#include "splay.h"
+#include "util.h"
 
 class intnode
 {
@@ -129,17 +129,16 @@ destintref (intnode &)
 int
 main(int argc, char *argv[])
 {
-    std::mt19937 generator;
-    xuniform_int_distribution<int> distribution;
-    auto nextRandom = std::bind (distribution, generator);
-
     {
+        int i;
+        intnode *I;
         /* test void * splay containers */
         splayNode *top = NULL;
+        squid_srandom(time(NULL));
 
-        for (int i = 0; i < 100; ++i) {
-            intnode *I = (intnode *)xcalloc(sizeof(intnode), 1);
-            I->i = nextRandom();
+        for (i = 0; i < 100; ++i) {
+            I = (intnode *)xcalloc(sizeof(intnode), 1);
+            I->i = squid_random();
             if (top)
                 top = top->insert(I, compareintvoid);
             else
@@ -162,7 +161,7 @@ main(int argc, char *argv[])
         for ( int i = 0; i < 100; ++i) {
             intnode *I;
             I = new intnode;
-            I->i = nextRandom();
+            I->i = squid_random();
             safeTop = safeTop->insert(I, compareint);
         }
 
@@ -177,7 +176,7 @@ main(int argc, char *argv[])
 
         for (int i = 0; i < 100; ++i) {
             intnode I;
-            I.i = nextRandom();
+            I.i = squid_random();
             safeTop = safeTop->insert(I, compareintref);
         }
 
@@ -211,7 +210,7 @@ main(int argc, char *argv[])
 
         for (int i = 0; i < 100; ++i) {
             intnode I;
-            I.i = nextRandom();
+            I.i = squid_random();
 
             if (I.i > 50 && I.i < 10000000)
                 safeTop->insert(I, compareintref);

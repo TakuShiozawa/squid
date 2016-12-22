@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -15,5 +15,5 @@
 
 /* explicit template instantiation required for some systems */
 
-template class ACLRequestHeaderStrategy<Http::HdrType::REFERER>;
+template class ACLRequestHeaderStrategy<HDR_REFERER>;
 

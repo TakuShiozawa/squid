@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,10 +11,11 @@
 
 #if USE_HTCP
 
-#include "http/forward.h"
 #include "HttpHeader.h"
+#include "HttpRequestMethod.h"
 #include "ip/forward.h"
-#include "store_key_md5.h"
+
+class HttpRequest;
 
 /// \ingroup ServerProtocolHTCP
 class HtcpReplyData

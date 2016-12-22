@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,10 +9,9 @@
 /* DEBUG: section 50    Log file handling */
 
 #include "squid.h"
-#include "fatal.h"
+#include "disk.h"
 #include "fd.h"
 #include "fde.h"
-#include "fs_io.h"
 #include "globals.h"
 #include "log/File.h"
 #include "log/ModStdio.h"
@@ -77,7 +76,7 @@ logfile_mod_stdio_writeline(Logfile * lf, const char *buf, size_t len)
 }
 
 static void
-logfile_mod_stdio_linestart(Logfile *)
+logfile_mod_stdio_linestart(Logfile * lf)
 {
 }
 
@@ -98,13 +97,14 @@ logfile_mod_stdio_flush(Logfile * lf)
 }
 
 static void
-logfile_mod_stdio_rotate(Logfile * lf, const int16_t nRotate)
+logfile_mod_stdio_rotate(Logfile * lf)
 {
 #ifdef S_ISREG
 
     struct stat sb;
 #endif
 
+    int i;
     char from[MAXPATHLEN];
     char to[MAXPATHLEN];
     l_stdio_t *ll = (l_stdio_t *) lf->data;
@@ -122,7 +122,7 @@ logfile_mod_stdio_rotate(Logfile * lf, const int16_t nRotate)
     debugs(0, DBG_IMPORTANT, "Rotate log file " << lf->path);
 
     /* Rotate numbers 0 through N up one */
-    for (int16_t i = nRotate; i > 1;) {
+    for (i = Config.Log.rotateNumber; i > 1;) {
         --i;
         snprintf(from, MAXPATHLEN, "%s.%d", realpath, i - 1);
         snprintf(to, MAXPATHLEN, "%s.%d", realpath, i);
@@ -134,7 +134,7 @@ logfile_mod_stdio_rotate(Logfile * lf, const int16_t nRotate)
 
     file_close(ll->fd);     /* always close */
 
-    if (nRotate > 0) {
+    if (Config.Log.rotateNumber > 0) {
         snprintf(to, MAXPATHLEN, "%s.%d", realpath, 0);
         xrename(realpath, to);
     }

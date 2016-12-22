@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -39,13 +39,12 @@ storeSwapMetaBuild(StoreEntry * e)
 {
     tlv *TLV = NULL;        /* we'll return this */
     tlv **T = &TLV;
-    const char *vary;
+    const char *url;
     assert(e->mem_obj != NULL);
     const int64_t objsize = e->mem_obj->expectedReplySize();
     assert(e->swap_status == SWAPOUT_WRITING);
 
     // e->mem_obj->request may be nil in this context
-    SBuf url;
     if (e->mem_obj->request)
         url = e->mem_obj->request->storeId();
     else
@@ -68,9 +67,8 @@ storeSwapMetaBuild(StoreEntry * e)
         return NULL;
     }
 
-    // XXX: do TLV without the c_str() termination. check readers first though
     T = StoreMeta::Add(T, t);
-    t = StoreMeta::Factory(STORE_META_URL, url.length()+1, url.c_str());
+    t = StoreMeta::Factory(STORE_META_URL, strlen(url) + 1, url);
 
     if (!t) {
         storeSwapTLVFree(TLV);
@@ -88,10 +86,10 @@ storeSwapMetaBuild(StoreEntry * e)
     }
 
     T = StoreMeta::Add(T, t);
-    vary = e->mem_obj->vary_headers;
+    SBuf vary(e->mem_obj->vary_headers);
 
-    if (vary) {
-        t =StoreMeta::Factory(STORE_META_VARY_HEADERS, strlen(vary) + 1, vary);
+    if (!vary.isEmpty()) {
+        t = StoreMeta::Factory(STORE_META_VARY_HEADERS, vary.length(), vary.c_str());
 
         if (!t) {
             storeSwapTLVFree(TLV);

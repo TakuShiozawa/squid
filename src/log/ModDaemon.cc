@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,7 +11,6 @@
 #include "squid.h"
 #include "cbdata.h"
 #include "comm/Loops.h"
-#include "fatal.h"
 #include "fde.h"
 #include "globals.h"
 #include "log/Config.h"
@@ -88,7 +87,7 @@ logfileFreeBuffer(Logfile * lf, logfile_buffer_t * b)
 }
 
 static void
-logfileHandleWrite(int, void *data)
+logfileHandleWrite(int fd, void *data)
 {
     Logfile *lf = static_cast<Logfile *>(data);
     l_daemon_t *ll = static_cast<l_daemon_t *>(lf->data);
@@ -207,7 +206,7 @@ logfileFlushEvent(void *data)
 /* External code */
 
 int
-logfile_mod_daemon_open(Logfile * lf, const char *path, size_t, int)
+logfile_mod_daemon_open(Logfile * lf, const char *path, size_t bufsz, int fatal_flag)
 {
     const char *args[5];
     char *tmpbuf;
@@ -269,7 +268,7 @@ logfile_mod_daemon_close(Logfile * lf)
 }
 
 static void
-logfile_mod_daemon_rotate(Logfile * lf, const int16_t)
+logfile_mod_daemon_rotate(Logfile * lf)
 {
     char tb[3];
     debugs(50, DBG_IMPORTANT, "logfileRotate: " << lf->path);

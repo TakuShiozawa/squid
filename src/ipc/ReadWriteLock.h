@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,7 +9,7 @@
 #ifndef SQUID_IPC_READ_WRITE_LOCK_H
 #define SQUID_IPC_READ_WRITE_LOCK_H
 
-#include <atomic>
+#include "ipc/AtomicWord.h"
 
 class StoreEntry;
 
@@ -25,8 +25,7 @@ class ReadWriteLockStats;
 class ReadWriteLock
 {
 public:
-    ReadWriteLock() : readers(0), writing(false), appending(false), readLevel(0), writeLevel(0)
-    {}
+    // default constructor is OK because of shared memory zero-initialization
 
     bool lockShared(); ///< lock for reading or return false
     bool lockExclusive(); ///< lock for modification or return false
@@ -40,13 +39,13 @@ public:
     void updateStats(ReadWriteLockStats &stats) const;
 
 public:
-    mutable std::atomic<uint32_t> readers; ///< number of reading users
-    std::atomic<bool> writing; ///< there is a writing user (there can be at most 1)
-    std::atomic<bool> appending; ///< the writer has promissed to only append
+    mutable Atomic::Word readers; ///< number of reading users
+    Atomic::Word writing; ///< there is a writing user (there can be at most 1)
+    Atomic::Word appending; ///< the writer has promissed to only append
 
 private:
-    mutable std::atomic<uint32_t> readLevel; ///< number of users reading (or trying to)
-    std::atomic<uint32_t> writeLevel; ///< number of users writing (or trying to write)
+    mutable Atomic::Word readLevel; ///< number of users reading (or trying to)
+    Atomic::Word writeLevel; ///< number of users writing (or trying to write)
 };
 
 /// approximate stats of a set of ReadWriteLocks

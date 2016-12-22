@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,7 +19,7 @@ namespace Format
 class Format;
 }
 
-/// representation of a custom log directive.
+/// representaiton of a custom log directive. Currently a POD.
 class CustomLog
 {
 public:
@@ -33,8 +33,6 @@ public:
     size_t bufferSize;
     /// whether unrecoverable errors (e.g., dropping a log record) kill worker
     bool fatal;
-    /// How many log files to retain when rotating. Default: obey logfile_rotate
-    int16_t rotateCount;
 };
 
 #endif /* SQUID_CUSTOMLOG_H_ */

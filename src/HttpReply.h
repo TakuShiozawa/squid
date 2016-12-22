@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -24,11 +24,11 @@ class HttpHdrSc;
 
 class HttpReply: public HttpMsg
 {
-    MEMPROXY_CLASS(HttpReply);
 
 public:
     typedef RefCount<HttpReply> Pointer;
 
+    MEMPROXY_CLASS(HttpReply);
     HttpReply();
     ~HttpReply();
 
@@ -39,7 +39,7 @@ public:
      \retval false and sets *error to zero when needs more data
      \retval false and sets *error to a positive Http::StatusCode on error
      */
-    virtual bool sanityCheckStartLine(const char *buf, const size_t hdr_len, Http::StatusCode *error);
+    virtual bool sanityCheckStartLine(MemBuf *buf, const size_t hdr_len, Http::StatusCode *error);
 
     /** \par public, readable; never update these or their .hdr equivalents directly */
     time_t date;
@@ -72,7 +72,7 @@ public:
 
     virtual bool inheritProperties(const HttpMsg *aMsg);
 
-    void updateOnNotModified(HttpReply const *other);
+    bool updateOnNotModified(HttpReply const *other);
 
     /** set commonly used info with one call */
     void setHeaders(Http::StatusCode status,
@@ -100,7 +100,7 @@ public:
 
     int validatorsMatch (HttpReply const *other) const;
 
-    void packHeadersInto(Packable * p) const;
+    void packHeadersInto(Packer * p) const;
 
     /** Clone this reply.
      *  Could be done as a copy-contructor but we do not want to accidently copy a HttpReply..
@@ -112,6 +112,10 @@ public:
 
     virtual void hdrCacheInit();
 
+    /// whether our Date header value is smaller than theirs
+    /// \returns false if any information is missing
+    bool olderThan(const HttpReply *them) const;
+
 private:
     /** initialize */
     void init();
@@ -120,7 +124,7 @@ private:
 
     void hdrCacheClean();
 
-    void packInto(Packable * p);
+    void packInto(Packer * p);
 
     /* ez-routines */
     /** \return construct 304 reply and pack it into a MemBuf */
@@ -139,10 +143,12 @@ private:
     mutable int64_t bodySizeMax; /**< cached result of calcMaxBodySize */
 
 protected:
-    virtual void packFirstLineInto(Packable * p, bool) const { sline.packInto(p); }
+    virtual void packFirstLineInto(Packer * p, bool) const { sline.packInto(p); }
 
     virtual bool parseFirstLine(const char *start, const char *end);
 };
+
+MEMPROXY_CLASS_INLINE(HttpReply);
 
 #endif /* SQUID_HTTPREPLY_H */
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -112,33 +112,22 @@ ClientRequestContext::~ClientRequestContext()
         cbdataReferenceDone(http);
 
     delete error;
-    debugs(85,3, "ClientRequestContext destructed, this=" << this);
+    debugs(85,3, HERE << this << " ClientRequestContext destructed");
 }
 
-ClientRequestContext::ClientRequestContext(ClientHttpRequest *anHttp) :
-    http(cbdataReference(anHttp)),
-    acl_checklist(NULL),
-    redirect_state(REDIRECT_NONE),
-    store_id_state(REDIRECT_NONE),
-    host_header_verify_done(false),
-    http_access_done(false),
-    adapted_http_access_done(false),
-#if USE_ADAPTATION
-    adaptation_acl_check_done(false),
-#endif
-    redirect_done(false),
-    store_id_done(false),
-    no_cache_done(false),
-    interpreted_req_hdrs(false),
-    tosToClientDone(false),
-    nfmarkToClientDone(false),
-#if USE_OPENSSL
-    sslBumpCheckDone(false),
-#endif
-    error(NULL),
-    readNextRequest(false)
+ClientRequestContext::ClientRequestContext(ClientHttpRequest *anHttp) : http(cbdataReference(anHttp)), acl_checklist (NULL), redirect_state (REDIRECT_NONE), store_id_state(REDIRECT_NONE),error(NULL), readNextRequest(false)
 {
-    debugs(85, 3, "ClientRequestContext constructed, this=" << this);
+    http_access_done = false;
+    redirect_done = false;
+    redirect_fail_count = 0;
+    store_id_done = false;
+    store_id_fail_count = 0;
+    no_cache_done = false;
+    interpreted_req_hdrs = false;
+#if USE_OPENSSL
+    sslBumpCheckDone = false;
+#endif
+    debugs(85,3, HERE << this << " ClientRequestContext constructed");
 }
 
 CBDATA_CLASS_INIT(ClientHttpRequest);
@@ -147,38 +136,30 @@ ClientHttpRequest::ClientHttpRequest(ConnStateData * aConn) :
 #if USE_ADAPTATION
     AsyncJob("ClientHttpRequest"),
 #endif
-    request(NULL),
-    uri(NULL),
-    log_uri(NULL),
-    req_sz(0),
-    logType(LOG_TAG_NONE),
-    calloutContext(NULL),
-    maxReplyBodySize_(0),
-    entry_(NULL),
-    loggingEntry_(NULL),
-    conn_(NULL)
-#if USE_OPENSSL
-    , sslBumpNeed_(Ssl::bumpEnd)
-#endif
-#if USE_ADAPTATION
-    , request_satisfaction_mode(false)
-    , request_satisfaction_offset(0)
-#endif
+    loggingEntry_(NULL)
 {
     setConn(aConn);
     al = new AccessLogEntry;
     al->cache.start_time = current_time;
-    al->tcpClient = clientConnection = aConn->clientConnection;
-    al->cache.port = aConn->port;
-    al->cache.caddr = aConn->log_addr;
+    if (aConn) {
+        al->tcpClient = clientConnection = aConn->clientConnection;
+        al->cache.port = aConn->port;
+        al->cache.caddr = aConn->log_addr;
 
 #if USE_OPENSSL
-    if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
-        if (auto ssl = fd_table[aConn->clientConnection->fd].ssl)
-            al->cache.sslClientCert.reset(SSL_get_peer_certificate(ssl));
-    }
+        if (aConn->clientConnection != NULL && aConn->clientConnection->isOpen()) {
+            if (SSL *ssl = fd_table[aConn->clientConnection->fd].ssl)
+                al->cache.sslClientCert.reset(SSL_get_peer_certificate(ssl));
+        }
 #endif
+    }
     dlinkAdd(this, &active, &ClientActiveRequests);
+#if USE_ADAPTATION
+    request_satisfaction_mode = false;
+#endif
+#if USE_OPENSSL
+    sslBumpNeed_ = Ssl::bumpEnd;
+#endif
 }
 
 /*
@@ -274,6 +255,7 @@ ClientHttpRequest::~ClientHttpRequest()
     /* the ICP check here was erroneous
      * - StoreEntry::releaseRequest was always called if entry was valid
      */
+    assert(logType < LOG_TYPE_MAX);
 
     logRequest();
 
@@ -354,7 +336,7 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
      * correctness.
      */
     if (header)
-        request->header.update(header, NULL);
+        request->header.update(header);
 
     http->log_uri = xstrdup(urlCanonicalClean(request));
 
@@ -388,7 +370,8 @@ clientBeginRequest(const HttpRequestMethod& method, char const *url, CSCB * stre
 
     request->my_addr.port(0);
 
-    request->http_ver = Http::ProtocolVersion();
+    /* Our version is HTTP/1.1 */
+    request->http_ver = Http::ProtocolVersion(1,1);
 
     http->request = request;
     HTTPMSGLOCK(http->request);
@@ -522,14 +505,14 @@ clientFollowXForwardedForCheck(allow_t answer, void *data)
 #endif /* FOLLOW_X_FORWARDED_FOR */
 
 static void
-hostHeaderIpVerifyWrapper(const ipcache_addrs* ia, const Dns::LookupDetails &dns, void *data)
+hostHeaderIpVerifyWrapper(const ipcache_addrs* ia, const DnsLookupDetails &dns, void *data)
 {
     ClientRequestContext *c = static_cast<ClientRequestContext*>(data);
     c->hostHeaderIpVerify(ia, dns);
 }
 
 void
-ClientRequestContext::hostHeaderIpVerify(const ipcache_addrs* ia, const Dns::LookupDetails &dns)
+ClientRequestContext::hostHeaderIpVerify(const ipcache_addrs* ia, const DnsLookupDetails &dns)
 {
     Comm::ConnectionPointer clientConn = http->getConn()->clientConnection;
 
@@ -559,7 +542,7 @@ ClientRequestContext::hostHeaderVerifyFailed(const char *A, const char *B)
     // NP: we do not yet handle CONNECT tunnels well, so ignore for them
     if (!Config.onoff.hostStrictVerify && http->request->method != Http::METHOD_CONNECT) {
         debugs(85, 3, "SECURITY ALERT: Host header forgery detected on " << http->getConn()->clientConnection <<
-               " (" << A << " does not match " << B << ") on URL: " << http->request->effectiveRequestUri());
+               " (" << A << " does not match " << B << ") on URL: " << urlCanonical(http->request));
 
         // NP: it is tempting to use 'flags.noCache' but that is all about READing cache data.
         // The problems here are about WRITE for new cache content, which means flags.cachable
@@ -573,8 +556,9 @@ ClientRequestContext::hostHeaderVerifyFailed(const char *A, const char *B)
 
     debugs(85, DBG_IMPORTANT, "SECURITY ALERT: Host header forgery detected on " <<
            http->getConn()->clientConnection << " (" << A << " does not match " << B << ")");
-    debugs(85, DBG_IMPORTANT, "SECURITY ALERT: By user agent: " << http->request->header.getStr(Http::HdrType::USER_AGENT));
-    debugs(85, DBG_IMPORTANT, "SECURITY ALERT: on URL: " << http->request->effectiveRequestUri());
+    if (const char *ua = http->request->header.getStr(HDR_USER_AGENT))
+        debugs(85, DBG_IMPORTANT, "SECURITY ALERT: By user agent: " << ua);
+    debugs(85, DBG_IMPORTANT, "SECURITY ALERT: on URL: " << urlCanonical(http->request));
 
     // IP address validation for Host: failed. reject the connection.
     clientStreamNode *node = (clientStreamNode *)http->client_stream.tail->prev->data;
@@ -599,7 +583,7 @@ void
 ClientRequestContext::hostHeaderVerify()
 {
     // Require a Host: header.
-    const char *host = http->request->header.getStr(Http::HdrType::HOST);
+    const char *host = http->request->header.getStr(HDR_HOST);
 
     if (!host) {
         // TODO: dump out the HTTP/1.1 error about missing host header.
@@ -647,11 +631,11 @@ ClientRequestContext::hostHeaderVerify()
         }
     }
 
-    debugs(85, 3, "validate host=" << host << ", port=" << port << ", portStr=" << (portStr?portStr:"NULL"));
+    debugs(85, 3, HERE << "validate host=" << host << ", port=" << port << ", portStr=" << (portStr?portStr:"NULL"));
     if (http->request->flags.intercepted || http->request->flags.interceptTproxy) {
         // verify the Host: port (if any) matches the apparent destination
         if (portStr && port != http->getConn()->clientConnection->local.port()) {
-            debugs(85, 3, "FAIL on validate port " << http->getConn()->clientConnection->local.port() <<
+            debugs(85, 3, HERE << "FAIL on validate port " << http->getConn()->clientConnection->local.port() <<
                    " matches Host: port " << port << " (" << portStr << ")");
             hostHeaderVerifyFailed("intercepted port", portStr);
         } else {
@@ -661,28 +645,28 @@ ClientRequestContext::hostHeaderVerify()
             ipcache_nbgethostbyname(host, hostHeaderIpVerifyWrapper, this);
         }
     } else if (!Config.onoff.hostStrictVerify) {
-        debugs(85, 3, "validate skipped.");
+        debugs(85, 3, HERE << "validate skipped.");
         http->doCallouts();
-    } else if (strlen(host) != strlen(http->request->url.host())) {
+    } else if (strlen(host) != strlen(http->request->GetHost())) {
         // Verify forward-proxy requested URL domain matches the Host: header
-        debugs(85, 3, "FAIL on validate URL domain length " << http->request->url.host() << " matches Host: " << host);
-        hostHeaderVerifyFailed(host, http->request->url.host());
-    } else if (matchDomainName(host, http->request->url.host()) != 0) {
+        debugs(85, 3, HERE << "FAIL on validate URL domain length " << http->request->GetHost() << " matches Host: " << host);
+        hostHeaderVerifyFailed(host, http->request->GetHost());
+    } else if (matchDomainName(host, http->request->GetHost()) != 0) {
         // Verify forward-proxy requested URL domain matches the Host: header
-        debugs(85, 3, "FAIL on validate URL domain " << http->request->url.host() << " matches Host: " << host);
-        hostHeaderVerifyFailed(host, http->request->url.host());
-    } else if (portStr && port != http->request->url.port()) {
+        debugs(85, 3, HERE << "FAIL on validate URL domain " << http->request->GetHost() << " matches Host: " << host);
+        hostHeaderVerifyFailed(host, http->request->GetHost());
+    } else if (portStr && port != http->request->port) {
         // Verify forward-proxy requested URL domain matches the Host: header
-        debugs(85, 3, "FAIL on validate URL port " << http->request->url.port() << " matches Host: port " << portStr);
+        debugs(85, 3, HERE << "FAIL on validate URL port " << http->request->port << " matches Host: port " << portStr);
         hostHeaderVerifyFailed("URL port", portStr);
-    } else if (!portStr && http->request->method != Http::METHOD_CONNECT && http->request->url.port() != http->request->url.getScheme().defaultPort()) {
+    } else if (!portStr && http->request->method != Http::METHOD_CONNECT && http->request->port != urlDefaultPort(http->request->url.getScheme())) {
         // Verify forward-proxy requested URL domain matches the Host: header
         // Special case: we don't have a default-port to check for CONNECT. Assume URL is correct.
-        debugs(85, 3, "FAIL on validate URL port " << http->request->url.port() << " matches Host: default port " << http->request->url.getScheme().defaultPort());
+        debugs(85, 3, "FAIL on validate URL port " << http->request->port << " matches Host: default port " << urlDefaultPort(http->request->url.getScheme()));
         hostHeaderVerifyFailed("URL port", "default port");
     } else {
         // Okay no problem.
-        debugs(85, 3, "validate passed.");
+        debugs(85, 3, HERE << "validate passed.");
         http->request->flags.hostVerified = true;
         http->doCallouts();
     }
@@ -696,14 +680,14 @@ ClientRequestContext::clientAccessCheck()
 #if FOLLOW_X_FORWARDED_FOR
     if (!http->request->flags.doneFollowXff() &&
             Config.accessList.followXFF &&
-            http->request->header.has(Http::HdrType::X_FORWARDED_FOR)) {
+            http->request->header.has(HDR_X_FORWARDED_FOR)) {
 
         /* we always trust the direct client address for actual use */
         http->request->indirect_client_addr = http->request->client_addr;
         http->request->indirect_client_addr.port(0);
 
         /* setup the XFF iterator for processing */
-        http->request->x_forwarded_for_iterator = http->request->header.getList(Http::HdrType::X_FORWARDED_FOR);
+        http->request->x_forwarded_for_iterator = http->request->header.getList(HDR_X_FORWARDED_FOR);
 
         /* begin by checking to see if we trust direct client enough to walk XFF */
         acl_checklist = clientAclChecklistCreate(Config.accessList.followXFF, http);
@@ -833,8 +817,10 @@ ClientRequestContext::clientAccessCheckDone(const allow_t &answer)
     }
 
     /* ACCESS_ALLOWED continues here ... */
-    xfree(http->uri);
-    http->uri = SBufToCstring(http->request->effectiveRequestUri());
+    safe_free(http->uri);
+
+    http->uri = xstrdup(urlCanonical(http->request));
+
     http->doCallouts();
 }
 
@@ -1016,19 +1002,19 @@ clientCheckPinning(ClientHttpRequest * http)
      * is already pinned if it was pinned earlier due to proxy auth
      */
     if (!request->flags.connectionAuth) {
-        if (req_hdr->has(Http::HdrType::AUTHORIZATION) || req_hdr->has(Http::HdrType::PROXY_AUTHORIZATION)) {
+        if (req_hdr->has(HDR_AUTHORIZATION) || req_hdr->has(HDR_PROXY_AUTHORIZATION)) {
             HttpHeaderPos pos = HttpHeaderInitPos;
             HttpHeaderEntry *e;
             int may_pin = 0;
             while ((e = req_hdr->getEntry(&pos))) {
-                if (e->id == Http::HdrType::AUTHORIZATION || e->id == Http::HdrType::PROXY_AUTHORIZATION) {
+                if (e->id == HDR_AUTHORIZATION || e->id == HDR_PROXY_AUTHORIZATION) {
                     const char *value = e->value.rawBuf();
                     if (strncasecmp(value, "NTLM ", 5) == 0
                             ||
                             strncasecmp(value, "Negotiate ", 10) == 0
                             ||
                             strncasecmp(value, "Kerberos ", 9) == 0) {
-                        if (e->id == Http::HdrType::AUTHORIZATION) {
+                        if (e->id == HDR_AUTHORIZATION) {
                             request->flags.connectionAuth = true;
                             may_pin = 1;
                         } else {
@@ -1055,7 +1041,7 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
     const char *str;
 
     request->imslen = -1;
-    request->ims = req_hdr->getTime(Http::HdrType::IF_MODIFIED_SINCE);
+    request->ims = req_hdr->getTime(HDR_IF_MODIFIED_SINCE);
 
     if (request->ims > 0)
         request->flags.ims = true;
@@ -1066,8 +1052,8 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
                 no_cache=true;
 
             // RFC 2616: treat Pragma:no-cache as if it was Cache-Control:no-cache when Cache-Control is missing
-        } else if (req_hdr->has(Http::HdrType::PRAGMA))
-            no_cache = req_hdr->hasListMember(Http::HdrType::PRAGMA,"no-cache",',');
+        } else if (req_hdr->has(HDR_PRAGMA))
+            no_cache = req_hdr->hasListMember(HDR_PRAGMA,"no-cache",',');
 
         /*
         * Work around for supporting the Reload button in IE browsers when Squid
@@ -1078,7 +1064,7 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
         */
         if (Config.onoff.ie_refresh) {
             if (http->flags.accel && request->flags.ims) {
-                if ((str = req_hdr->getStr(Http::HdrType::USER_AGENT))) {
+                if ((str = req_hdr->getStr(HDR_USER_AGENT))) {
                     if (strstr(str, "MSIE 5.01") != NULL)
                         no_cache=true;
                     else if (strstr(str, "MSIE 5.0") != NULL)
@@ -1136,21 +1122,21 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
      * If these headers appear on any other type of request, delete them now.
      */
     else {
-        req_hdr->delById(Http::HdrType::RANGE);
-        req_hdr->delById(Http::HdrType::REQUEST_RANGE);
+        req_hdr->delById(HDR_RANGE);
+        req_hdr->delById(HDR_REQUEST_RANGE);
         request->ignoreRange("neither HEAD nor GET");
     }
 
-    if (req_hdr->has(Http::HdrType::AUTHORIZATION))
+    if (req_hdr->has(HDR_AUTHORIZATION))
         request->flags.auth = true;
 
     clientCheckPinning(http);
 
-    if (!request->url.userInfo().isEmpty())
+    if (request->login[0] != '\0')
         request->flags.auth = true;
 
-    if (req_hdr->has(Http::HdrType::VIA)) {
-        String s = req_hdr->getList(Http::HdrType::VIA);
+    if (req_hdr->has(HDR_VIA)) {
+        String s = req_hdr->getList(HDR_VIA);
         /*
          * ThisCache cannot be a member of Via header, "1.1 ThisCache" can.
          * Note ThisCache2 has a space prepended to the hostname so we don't
@@ -1173,8 +1159,8 @@ clientInterpretRequestHeaders(ClientHttpRequest * http)
 
 #if USE_FORW_VIA_DB
 
-    if (req_hdr->has(Http::HdrType::X_FORWARDED_FOR)) {
-        String s = req_hdr->getList(Http::HdrType::X_FORWARDED_FOR);
+    if (req_hdr->has(HDR_X_FORWARDED_FOR)) {
+        String s = req_hdr->getList(HDR_X_FORWARDED_FOR);
         fvdbCountForw(s.termedBuf());
         s.clean();
     }
@@ -1233,13 +1219,6 @@ ClientRequestContext::clientRedirectDone(const Helper::Reply &reply)
     UpdateRequestNotes(http->getConn(), *old_request, reply.notes);
 
     switch (reply.result) {
-    case Helper::TimedOut:
-        if (Config.onUrlRewriteTimeout.action != toutActBypass) {
-            http->calloutsError(ERR_GATEWAY_FAILURE, ERR_DETAIL_REDIRECTOR_TIMEDOUT);
-            debugs(85, DBG_IMPORTANT, "ERROR: URL rewrite helper: Timedout");
-        }
-        break;
-
     case Helper::Unknown:
     case Helper::TT:
         // Handler in redirect.cc should have already mapped Unknown
@@ -1248,7 +1227,12 @@ ClientRequestContext::clientRedirectDone(const Helper::Reply &reply)
         break;
 
     case Helper::BrokenHelper:
-        debugs(85, DBG_IMPORTANT, "ERROR: URL rewrite helper: " << reply);
+        debugs(85, DBG_IMPORTANT, "ERROR: URL rewrite helper: " << reply << ", attempt #" << (redirect_fail_count+1) << " of 2");
+        if (redirect_fail_count < 2) { // XXX: make this configurable ?
+            ++redirect_fail_count;
+            // reset state flag to try redirector again from scratch.
+            redirect_done = false;
+        }
         break;
 
     case Helper::Error:
@@ -1298,7 +1282,7 @@ ClientRequestContext::clientRedirectDone(const Helper::Reply &reply)
                 // XXX: the clone() should be done only AFTER we know the new URL is valid.
                 HttpRequest *new_request = old_request->clone();
                 if (urlParse(old_request->method, const_cast<char*>(urlNote), new_request)) {
-                    debugs(61, 2, "URL-rewriter diverts URL from " << old_request->effectiveRequestUri() << " to " << new_request->effectiveRequestUri());
+                    debugs(61,2, HERE << "URL-rewriter diverts URL from " << urlCanonical(old_request) << " to " << urlCanonical(new_request));
 
                     // update the new request to flag the re-writing was done on it
                     new_request->flags.redirected = true;
@@ -1311,8 +1295,8 @@ ClientRequestContext::clientRedirectDone(const Helper::Reply &reply)
                     }
 
                     // update the current working ClientHttpRequest fields
-                    xfree(http->uri);
-                    http->uri = SBufToCstring(new_request->effectiveRequestUri());
+                    safe_free(http->uri);
+                    http->uri = xstrdup(urlCanonical(new_request));
                     HTTPMSGUNLOCK(old_request);
                     http->request = new_request;
                     HTTPMSGLOCK(http->request);
@@ -1363,10 +1347,13 @@ ClientRequestContext::clientStoreIdDone(const Helper::Reply &reply)
         debugs(85, DBG_IMPORTANT, "ERROR: storeID helper returned invalid result code. Wrong helper? " << reply);
         break;
 
-    case Helper::TimedOut:
-    // Timeouts for storeID are not implemented
     case Helper::BrokenHelper:
-        debugs(85, DBG_IMPORTANT, "ERROR: storeID helper: " << reply);
+        debugs(85, DBG_IMPORTANT, "ERROR: storeID helper: " << reply << ", attempt #" << (store_id_fail_count+1) << " of 2");
+        if (store_id_fail_count < 2) { // XXX: make this configurable ?
+            ++store_id_fail_count;
+            // reset state flag to try StoreID again from scratch.
+            store_id_done = false;
+        }
         break;
 
     case Helper::Error:
@@ -1514,7 +1501,7 @@ ClientHttpRequest::processRequest()
         }
 #endif
         getConn()->stopReading(); // tunnels read for themselves
-        tunnelStart(this);
+        tunnelStart(this, &out.size, &al->http.code, al);
         return;
     }
 
@@ -1526,7 +1513,7 @@ ClientHttpRequest::httpStart()
 {
     PROF_start(httpStart);
     logType = LOG_TAG_NONE;
-    debugs(85, 4, logType.c_str() << " for '" << uri << "'");
+    debugs(85, 4, LogTags_str[logType] << " for '" << uri << "'");
 
     /* no one should have touched this */
     assert(out.offset == 0);
@@ -1802,9 +1789,8 @@ ClientHttpRequest::doCallouts()
 #endif
 
     if (calloutContext->error) {
-        // XXX: prformance regression. c_str() reallocates
-        SBuf storeUri(request->storeId());
-        StoreEntry *e = storeCreateEntry(storeUri.c_str(), storeUri.c_str(), request->flags, request->method);
+        const char *storeUri = request->storeId();
+        StoreEntry *e= storeCreateEntry(storeUri, storeUri, request->flags, request->method);
 #if USE_OPENSSL
         if (sslBumpNeeded()) {
             // We have to serve an error, so bump the client first.
@@ -1825,7 +1811,7 @@ ClientHttpRequest::doCallouts()
             repContext->setReplyToStoreEntry(e, "immediate SslBump error");
             errorAppendEntry(e, calloutContext->error);
             calloutContext->error = NULL;
-            if (calloutContext->readNextRequest)
+            if (calloutContext->readNextRequest && getConn())
                 getConn()->flags.readMore = true; // resume any pipeline reads.
             node = (clientStreamNode *)client_stream.tail->data;
             clientStreamRead(node, this, node->readBuffer);
@@ -1908,14 +1894,14 @@ ClientHttpRequest::handleAdaptedHeader(HttpMsg *msg)
         HTTPMSGLOCK(request);
 
         // update the new message to flag whether URL re-writing was done on it
-        if (request->effectiveRequestUri().cmp(uri) != 0)
+        if (strcmp(urlCanonical(request),uri) != 0)
             request->flags.redirected = 1;
 
         /*
          * Store the new URI for logging
          */
         xfree(uri);
-        uri = SBufToCstring(request->effectiveRequestUri());
+        uri = xstrdup(urlCanonical(request));
         setLogUri(this, urlCanonicalClean(request));
         assert(request->method.id());
     } else if (HttpReply *new_rep = dynamic_cast<HttpReply*>(msg)) {
@@ -2066,18 +2052,6 @@ ClientHttpRequest::handleAdaptationFailure(int errDetail, bool bypassable)
     clientReplyContext *repContext = dynamic_cast<clientReplyContext *>(node->data.getRaw());
     assert(repContext);
 
-    calloutsError(ERR_ICAP_FAILURE, errDetail);
-
-    if (calloutContext)
-        doCallouts();
-}
-
-#endif
-
-// XXX: modify and use with ClientRequestContext::clientAccessCheckDone too.
-void
-ClientHttpRequest::calloutsError(const err_type error, const int errDetail)
-{
     // The original author of the code also wanted to pass an errno to
     // setReplyToError, but it seems unlikely that the errno reflects the
     // true cause of the error at this point, so I did not pass it.
@@ -2085,7 +2059,7 @@ ClientHttpRequest::calloutsError(const err_type error, const int errDetail)
         Ip::Address noAddr;
         noAddr.setNoAddr();
         ConnStateData * c = getConn();
-        calloutContext->error = clientBuildError(error, Http::scInternalServerError,
+        calloutContext->error = clientBuildError(ERR_ICAP_FAILURE, Http::scInternalServerError,
                                 NULL,
                                 c != NULL ? c->clientConnection->remote : noAddr,
                                 request
@@ -2098,7 +2072,10 @@ ClientHttpRequest::calloutsError(const err_type error, const int errDetail)
         calloutContext->readNextRequest = true;
         if (c != NULL)
             c->expectNoForwarding();
+        doCallouts();
     }
     //else if(calloutContext == NULL) is it possible?
 }
+
+#endif
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -20,7 +20,7 @@ Log::Format::SquidReferer(const AccessLogEntry::Pointer &al, Logfile *logfile)
 {
     const char *referer = NULL;
     if (al->request)
-        referer = al->request->header.getStr(Http::HdrType::REFERER);
+        referer = al->request->header.getStr(HDR_REFERER);
 
     if (!referer || *referer == '\0')
         referer = "-";

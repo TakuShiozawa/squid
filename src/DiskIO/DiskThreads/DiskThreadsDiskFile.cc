@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,12 +9,12 @@
 /* DEBUG: section 79    Disk IO Routines */
 
 #include "squid.h"
+#include "disk.h"
 #include "DiskIO/IORequestor.h"
 #include "DiskIO/ReadRequest.h"
 #include "DiskIO/WriteRequest.h"
 #include "DiskThreadsDiskFile.h"
 #include "fd.h"
-#include "fs_io.h"
 #include "Generic.h"
 #include "globals.h"
 #include "StatCounters.h"
@@ -135,7 +135,7 @@ DiskThreadsDiskFile::OpenDone(int fd, void *cbdata, const char *buf, int aio_ret
 }
 
 void
-DiskThreadsDiskFile::openDone(int, const char *, int anFD, int errflag)
+DiskThreadsDiskFile::openDone(int unused, const char *unused2, int anFD, int errflag)
 {
     debugs(79, 3, "DiskThreadsDiskFile::openDone: FD " << anFD << ", errflag " << errflag);
     --Opening_FD;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,18 +9,17 @@
 /* DEBUG: section 79    Disk IO Routines */
 
 #include "squid.h"
-#include "base/AsyncJobCalls.h"
+#include "disk.h"
 #include "fs/rock/RockDbCell.h"
 #include "fs/rock/RockRebuild.h"
 #include "fs/rock/RockSwapDir.h"
-#include "fs_io.h"
 #include "globals.h"
 #include "ipc/StoreMap.h"
 #include "md5.h"
 #include "SquidTime.h"
-#include "Store.h"
 #include "store_rebuild.h"
 #include "tools.h"
+#include "typedefs.h"
 
 #include <cerrno>
 
@@ -282,7 +281,7 @@ Rock::Rebuild::importEntry(Ipc::StoreMapAnchor &anchor, const sfileno fileno, co
     cache_key key[SQUID_MD5_DIGEST_LENGTH];
     StoreEntry loadedE;
     const uint64_t knownSize = header.entrySize > 0 ?
-                               header.entrySize : anchor.basics.swap_file_sz.load();
+                               header.entrySize : anchor.basics.swap_file_sz.get();
     if (!storeRebuildParseEntry(buf, loadedE, key, counts, knownSize))
         return false;
 

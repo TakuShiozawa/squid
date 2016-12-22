@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -28,6 +28,7 @@
 #include "errorpage.h"
 #include "globals.h"
 #include "HttpRequest.h"
+#include "Mem.h"
 
 #include <set>
 #include <algorithm>
@@ -172,7 +173,7 @@ aclParseAccessLine(const char *directive, ConfigParser &, acl_access **treep)
     const int ruleId = ((treep && *treep) ? (*treep)->childrenCount() : 0) + 1;
     MemBuf ctxBuf;
     ctxBuf.init();
-    ctxBuf.appendf("%s#%d", directive, ruleId);
+    ctxBuf.Printf("%s#%d", directive, ruleId);
     ctxBuf.terminate();
 
     Acl::AndNode *rule = new Acl::AndNode;
@@ -208,7 +209,7 @@ aclParseAclList(ConfigParser &, Acl::Tree **treep, const char *label)
 
     MemBuf ctxLine;
     ctxLine.init();
-    ctxLine.appendf("(%s %s line)", cfg_directive, label);
+    ctxLine.Printf("(%s %s line)", cfg_directive, label);
     ctxLine.terminate();
 
     Acl::AndNode *rule = new Acl::AndNode;
@@ -217,7 +218,7 @@ aclParseAclList(ConfigParser &, Acl::Tree **treep, const char *label)
 
     MemBuf ctxTree;
     ctxTree.init();
-    ctxTree.appendf("%s %s", cfg_directive, label);
+    ctxTree.Printf("%s %s", cfg_directive, label);
     ctxTree.terminate();
 
     // We want a cbdata-protected Tree (despite giving it only one child node).

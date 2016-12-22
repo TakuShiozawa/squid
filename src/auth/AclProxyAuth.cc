@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -25,14 +25,9 @@ ACLProxyAuth::~ACLProxyAuth()
     delete data;
 }
 
-ACLProxyAuth::ACLProxyAuth(ACLData<char const *> *newData, char const *theType) :
-    data(newData),
-    type_(theType)
-{}
+ACLProxyAuth::ACLProxyAuth(ACLData<char const *> *newData, char const *theType) : data(newData), type_(theType) {}
 
-ACLProxyAuth::ACLProxyAuth(ACLProxyAuth const &old) :
-    data(old.data->clone()),
-    type_(old.type_)
+ACLProxyAuth::ACLProxyAuth(ACLProxyAuth const &old) : data(old.data->clone()), type_(old.type_)
 {}
 
 ACLProxyAuth &

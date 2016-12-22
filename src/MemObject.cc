@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -92,31 +92,22 @@ MemObject::setUris(char const *aStoreId, char const *aLogUri, const HttpRequestM
 #endif
 }
 
-MemObject::MemObject() :
-    inmem_lo(0),
-    nclients(0),
-    smpCollapsed(false),
-    request(nullptr),
-    ping_reply_callback(nullptr),
-    ircb_data(nullptr),
-    id(0),
-    object_sz(-1),
-    swap_hdr_sz(0),
-#if URL_CHECKSUM_DEBUG
-    chksum(0),
-#endif
-    vary_headers(nullptr)
+MemObject::MemObject(): smpCollapsed(false)
 {
-    debugs(20, 3, "new MemObject " << this);
-    memset(&start_ping, 0, sizeof(start_ping));
-    memset(&abort, 0, sizeof(abort));
+    debugs(20, 3, HERE << "new MemObject " << this);
     _reply = new HttpReply;
     HTTPMSGLOCK(_reply);
+
+    object_sz = -1;
+
+    /* XXX account log_url */
+
+    swapout.decision = SwapOut::swNeedsCheck;
 }
 
 MemObject::~MemObject()
 {
-    debugs(20, 3, "del MemObject " << this);
+    debugs(20, 3, HERE << "del MemObject " << this);
     const Ctx ctx = ctx_enter(hasUris() ? urlXXX() : "[unknown_ctx]");
 
 #if URL_CHECKSUM_DEBUG
@@ -145,8 +136,6 @@ MemObject::~MemObject()
     HTTPMSGUNLOCK(request);
 
     ctx_exit(ctx);              /* must exit before we free mem->url */
-
-    safe_free(vary_headers);
 }
 
 void
@@ -229,24 +218,28 @@ struct StoreClientStats : public unary_function<store_client, void> {
 void
 MemObject::stat(MemBuf * mb) const
 {
-    mb->appendf("\t" SQUIDSBUFPH " %s\n", SQUIDSBUFPRINT(method.image()), logUri());
-    if (vary_headers)
-        mb->appendf("\tvary_headers: %s\n", vary_headers);
-    mb->appendf("\tinmem_lo: %" PRId64 "\n", inmem_lo);
-    mb->appendf("\tinmem_hi: %" PRId64 "\n", data_hdr.endOffset());
-    mb->appendf("\tswapout: %" PRId64 " bytes queued\n", swapout.queue_offset);
+    mb->Printf("\t" SQUIDSBUFPH " %s\n", SQUIDSBUFPRINT(method.image()), logUri());
+    if (!vary_headers.isEmpty())
+        mb->Printf("\tvary_headers: " SQUIDSBUFPH "\n", SQUIDSBUFPRINT(vary_headers));
+    mb->Printf("\tinmem_lo: %" PRId64 "\n", inmem_lo);
+    mb->Printf("\tinmem_hi: %" PRId64 "\n", data_hdr.endOffset());
+    mb->Printf("\tswapout: %" PRId64 " bytes queued\n",
+               swapout.queue_offset);
 
     if (swapout.sio.getRaw())
-        mb->appendf("\tswapout: %" PRId64 " bytes written\n", (int64_t) swapout.sio->offset());
+        mb->Printf("\tswapout: %" PRId64 " bytes written\n",
+                   (int64_t) swapout.sio->offset());
 
     if (xitTable.index >= 0)
-        mb->appendf("\ttransient index: %d state: %d\n", xitTable.index, xitTable.io);
+        mb->Printf("\ttransient index: %d state: %d\n",
+                   xitTable.index, xitTable.io);
     if (memCache.index >= 0)
-        mb->appendf("\tmem-cache index: %d state: %d offset: %" PRId64 "\n", memCache.index, memCache.io, memCache.offset);
+        mb->Printf("\tmem-cache index: %d state: %d offset: %" PRId64 "\n",
+                   memCache.index, memCache.io, memCache.offset);
     if (object_sz >= 0)
-        mb->appendf("\tobject_sz: %" PRId64 "\n", object_sz);
+        mb->Printf("\tobject_sz: %" PRId64 "\n", object_sz);
     if (smpCollapsed)
-        mb->appendf("\tsmp-collapsed\n");
+        mb->Printf("\tsmp-collapsed\n");
 
     StoreClientStats statsVisitor(mb);
 

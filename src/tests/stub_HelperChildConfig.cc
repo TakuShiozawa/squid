@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,9 +21,7 @@ Helper::ChildConfig::ChildConfig():
     n_idle(1),
     concurrency(0),
     n_running(0),
-    n_active(0),
-    queue_size(0),
-    defaultQueueSize(true)
+    n_active(0)
 {}
 
 Helper::ChildConfig::ChildConfig(const unsigned int m):
@@ -32,9 +30,7 @@ Helper::ChildConfig::ChildConfig(const unsigned int m):
     n_idle(1),
     concurrency(0),
     n_running(0),
-    n_active(0),
-    queue_size(2 * m),
-    defaultQueueSize(true)
+    n_active(0)
 {}
 
 int
@@ -51,4 +47,5 @@ Helper::ChildConfig::needNew() const
 }
 
 void Helper::ChildConfig::parseConfig() STUB
+Helper::ChildConfig & Helper::ChildConfig::updateLimits(const Helper::ChildConfig &) STUB_RETVAL(*this)
 

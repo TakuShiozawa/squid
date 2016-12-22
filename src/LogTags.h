@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -25,8 +25,10 @@ typedef enum {
     LOG_TCP_REFRESH_FAIL_OLD,   // refresh from origin failed, stale reply sent
     LOG_TCP_REFRESH_FAIL_ERR,   // refresh from origin failed, error forwarded
     LOG_TCP_REFRESH_MODIFIED,   // refresh from origin replaced existing entry
+    LOG_TCP_REFRESH_IGNORED,    // refresh from origin ignored, stale entry sent
     LOG_TCP_CLIENT_REFRESH_MISS,
     LOG_TCP_IMS_HIT,
+    LOG_TCP_INM_HIT,
     LOG_TCP_SWAPFAIL_MISS,
     LOG_TCP_NEGATIVE_HIT,
     LOG_TCP_MEM_HIT,
@@ -42,43 +44,30 @@ typedef enum {
     LOG_UDP_MISS_NOFETCH,
     LOG_ICP_QUERY,
     LOG_TYPE_MAX
-} LogTags_ot;
+} LogTags;
 
-class LogTags
+/// list of string representations for LogTags
+extern const char *LogTags_str[];
+
+/// determine if the log tag code indicates a cache HIT
+inline bool logTypeIsATcpHit(LogTags code)
 {
-public:
-    LogTags(LogTags_ot t) : oldType(t) {assert(oldType < LOG_TYPE_MAX);}
-    LogTags &operator =(const LogTags_ot &t) {assert(t < LOG_TYPE_MAX); oldType = t; return *this;}
+    return
+        (code == LOG_TCP_HIT) ||
+        (code == LOG_TCP_IMS_HIT) ||
+        (code == LOG_TCP_INM_HIT) ||
+        (code == LOG_TCP_REFRESH_FAIL_OLD) ||
+        (code == LOG_TCP_REFRESH_UNMODIFIED) ||
+        (code == LOG_TCP_NEGATIVE_HIT) ||
+        (code == LOG_TCP_MEM_HIT) ||
+        (code == LOG_TCP_OFFLINE_HIT);
+}
 
-    /// compute the status access.log field
-    const char *c_str() const;
-
-    /// determine if the log tag code indicates a cache HIT
-    bool isTcpHit() const;
-
-    /// error states terminating the transaction
-    struct Errors {
-        Errors() : timedout(false), aborted(false) {}
-
-        bool timedout; ///< tag: TIMEDOUT - terminated due to a lifetime or I/O timeout
-        bool aborted;  ///< tag: ABORTED  - other abnormal termination (e.g., I/O error)
-    } err;
-
-private:
-    /// list of string representations for LogTags_ot
-    static const char *Str_[];
-
-public: // XXX: only until client_db.cc stats are redesigned.
-
-    // deprecated LogTag enum value
-    LogTags_ot oldType;
-};
-
-/// iterator for LogTags_ot enumeration
-inline LogTags_ot &operator++ (LogTags_ot &aLogType)
+/// iterator for LogTags enumeration
+inline LogTags &operator++ (LogTags &aLogType)
 {
     int tmp = (int)aLogType;
-    aLogType = (LogTags_ot)(++tmp);
+    aLogType = (LogTags)(++tmp);
     return aLogType;
 }
 

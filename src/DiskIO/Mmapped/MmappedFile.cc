@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,11 +10,11 @@
 
 #include "squid.h"
 #include "Debug.h"
+#include "disk.h"
 #include "DiskIO/IORequestor.h"
 #include "DiskIO/Mmapped/MmappedFile.h"
 #include "DiskIO/ReadRequest.h"
 #include "DiskIO/WriteRequest.h"
-#include "fs_io.h"
 #include "globals.h"
 
 #include <cerrno>
@@ -69,7 +69,7 @@ MmappedFile::~MmappedFile()
 
 // XXX: almost a copy of BlockingFile::open
 void
-MmappedFile::open(int flags, mode_t, RefCount<IORequestor> callback)
+MmappedFile::open(int flags, mode_t mode, RefCount<IORequestor> callback)
 {
     assert(fd < 0);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -17,7 +17,6 @@
 #include "util.h"
 
 #include <cstring>
-#include <functional>
 #include <iostream>
 #include <sstream>
 
@@ -38,7 +37,7 @@ const SBuf::size_type SBuf::maxSize;
 
 SBufStats::SBufStats()
     : alloc(0), allocCopy(0), allocFromString(0), allocFromCString(0),
-      assignFast(0), clear(0), append(0), moves(0), toStream(0), setChar(0),
+      assignFast(0), clear(0), append(0), toStream(0), setChar(0),
       getChar(0), compareSlow(0), compareFast(0), copyOut(0),
       rawAccess(0), nulTerminate(0), chop(0), trim(0), find(0), scanf(0),
       caseChange(0), cowFast(0), cowSlow(0), live(0)
@@ -54,7 +53,6 @@ SBufStats::operator +=(const SBufStats& ss)
     assignFast += ss.assignFast;
     clear += ss.clear;
     append += ss.append;
-    moves += ss.moves;
     toStream += ss.toStream;
     setChar += ss.setChar;
     getChar += ss.getChar;
@@ -121,15 +119,6 @@ SBuf::SBuf(const char *S, size_type n)
     ++stats.live;
 }
 
-SBuf::SBuf(const char *S)
-    : store_(GetStorePrototype()), off_(0), len_(0)
-{
-    append(S,npos);
-    ++stats.alloc;
-    ++stats.allocFromCString;
-    ++stats.live;
-}
-
 SBuf::~SBuf()
 {
     debugs(24, 8, id << " destructed");
@@ -171,6 +160,30 @@ SBuf::reserveCapacity(size_type minCapacity)
 {
     Must(minCapacity <= maxSize);
     cow(minCapacity);
+}
+
+SBuf::size_type
+SBuf::reserve(const SBufReservationRequirements &req)
+{
+    debugs(24, 8, id << " was: " << off_ << '+' << len_ << '+' << spaceSize() <<
+           '=' << store_->capacity);
+
+    const bool mustRealloc = !req.allowShared && store_->LockCount() > 1;
+
+    if (!mustRealloc && spaceSize() >= req.minSpace)
+        return spaceSize(); // the caller is content with what we have
+
+    /* only reallocation can make the caller happy */
+
+    if (!mustRealloc && len_ >= req.maxCapacity)
+        return spaceSize(); // but we cannot reallocate
+
+    const size_type desiredSpace = std::max(req.minSpace, req.idealSpace);
+    const size_type newSpace = std::min(desiredSpace, maxSize - len_);
+    reserveCapacity(std::min(len_ + newSpace, req.maxCapacity));
+    debugs(24, 7, id << " now: " << off_ << '+' << len_ << '+' << spaceSize() <<
+           '=' << store_->capacity);
+    return spaceSize(); // reallocated and probably reserved enough space
 }
 
 char *
@@ -386,37 +399,23 @@ memcasecmp(const char *b1, const char *b2, SBuf::size_type len)
 int
 SBuf::compare(const SBuf &S, const SBufCaseSensitive isCaseSensitive, const size_type n) const
 {
-    if (n != npos) {
-        debugs(24, 8, "length specified. substr and recurse");
+    if (n != npos)
         return substr(0,n).compare(S.substr(0,n),isCaseSensitive);
-    }
 
     const size_type byteCompareLen = min(S.length(), length());
     ++stats.compareSlow;
     int rv = 0;
-    debugs(24, 8, "comparing length " << byteCompareLen);
     if (isCaseSensitive == caseSensitive) {
         rv = memcmp(buf(), S.buf(), byteCompareLen);
     } else {
         rv = memcasecmp(buf(), S.buf(), byteCompareLen);
     }
-    if (rv != 0) {
-        debugs(24, 8, "result: " << rv);
+    if (rv != 0)
         return rv;
-    }
-    if (n <= length() || n <= S.length()) {
-        debugs(24, 8, "same contents and bounded length. Equal");
+    if (length() == S.length())
         return 0;
-    }
-    if (length() == S.length()) {
-        debugs(24, 8, "same contents and same length. Equal");
-        return 0;
-    }
-    if (length() > S.length()) {
-        debugs(24, 8, "lhs is longer than rhs. Result is 1");
+    if (length() > S.length())
         return 1;
-    }
-    debugs(24, 8, "rhs is longer than lhs. Result is -1");
     return -1;
 }
 
@@ -673,17 +672,17 @@ SBuf::find(const SBuf &needle, size_type startPos) const
 
     ++stats.find;
 
-    char *start = buf()+startPos;
+    char *begin = buf()+startPos;
     char *lastPossible = buf()+length()-needle.length()+1;
     char needleBegin = needle[0];
 
     debugs(24, 7, "looking for " << needle << "starting at " << startPos <<
            " in id " << id);
-    while (start < lastPossible) {
+    while (begin < lastPossible) {
         char *tmp;
-        debugs(24, 8, " begin=" << (void *) start <<
+        debugs(24, 8, " begin=" << (void *) begin <<
                ", lastPossible=" << (void*) lastPossible );
-        tmp = static_cast<char *>(memchr(start, needleBegin, lastPossible-start));
+        tmp = static_cast<char *>(memchr(begin, needleBegin, lastPossible-begin));
         if (tmp == NULL) {
             debugs(24, 8 , "First byte not found");
             return npos;
@@ -693,7 +692,7 @@ SBuf::find(const SBuf &needle, size_type startPos) const
             debugs(24, 8, "Found at " << (tmp-buf()));
             return (tmp-buf());
         }
-        start = tmp+1;
+        begin = tmp+1;
     }
     debugs(24, 8, "not found");
     return npos;
@@ -779,8 +778,8 @@ SBuf::findFirstOf(const CharacterSet &set, size_type startPos) const
 
     debugs(24, 7, "first of characterset " << set.name << " in id " << id);
     char *cur = buf()+startPos;
-    const char *bufend = bufEnd();
-    while (cur < bufend) {
+    const char *end = bufEnd();
+    while (cur < end) {
         if (set[*cur])
             return cur-buf();
         ++cur;
@@ -802,53 +801,11 @@ SBuf::findFirstNotOf(const CharacterSet &set, size_type startPos) const
 
     debugs(24, 7, "first not of characterset " << set.name << " in id " << id);
     char *cur = buf()+startPos;
-    const char *bufend = bufEnd();
-    while (cur < bufend) {
+    const char *end = bufEnd();
+    while (cur < end) {
         if (!set[*cur])
             return cur-buf();
         ++cur;
-    }
-    debugs(24, 7, "not found");
-    return npos;
-}
-
-SBuf::size_type
-SBuf::findLastOf(const CharacterSet &set, size_type endPos) const
-{
-    ++stats.find;
-
-    if (isEmpty())
-        return npos;
-
-    if (endPos == npos || endPos >= length())
-        endPos = length() - 1;
-
-    debugs(24, 7, "last of characterset " << set.name << " in id " << id);
-    const char *start = buf();
-    for (const char *cur = start + endPos; cur >= start; --cur) {
-        if (set[*cur])
-            return cur - start;
-    }
-    debugs(24, 7, "not found");
-    return npos;
-}
-
-SBuf::size_type
-SBuf::findLastNotOf(const CharacterSet &set, size_type endPos) const
-{
-    ++stats.find;
-
-    if (isEmpty())
-        return npos;
-
-    if (endPos == npos || endPos >= length())
-        endPos = length() - 1;
-
-    debugs(24, 7, "last not of characterset " << set.name << " in id " << id);
-    const char *start = buf();
-    for (const char *cur = start + endPos; cur >= start; --cur) {
-        if (!set[*cur])
-            return cur - start;
     }
     debugs(24, 7, "not found");
     return npos;
@@ -888,7 +845,6 @@ SBufStats::dump(std::ostream& os) const
        "\nno-copy assignments: " << assignFast <<
        "\nclearing operations: " << clear <<
        "\nappend operations: " << append <<
-       "\nmove operations: " << moves <<
        "\ndump-to-ostream: " << toStream <<
        "\nset-char: " << setChar <<
        "\nget-char: " << getChar <<

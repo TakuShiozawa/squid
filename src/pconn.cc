@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -37,7 +37,6 @@ IdleConnList::IdleConnList(const char *key, PconnPool *thePool) :
     parent_(thePool)
 {
     hash.key = xstrdup(key);
-    hash.next = NULL;
     theList_ = new Comm::ConnectionPointer[capacity_];
 // TODO: re-attach to MemPools. WAS: theList = (?? *)pconn_fds_pool->alloc();
 }
@@ -183,7 +182,7 @@ IdleConnList::push(const Comm::ConnectionPointer &conn)
     comm_read(conn, fakeReadBuf_, sizeof(fakeReadBuf_), readCall);
     AsyncCall::Pointer timeoutCall = commCbCall(5,4, "IdleConnList::Timeout",
                                      CommTimeoutCbPtrFun(IdleConnList::Timeout, this));
-    commSetConnTimeout(conn, conn->timeLeft(Config.Timeout.serverIdlePconn), timeoutCall);
+    commSetConnTimeout(conn, Config.Timeout.serverIdlePconn, timeoutCall);
 }
 
 /// Determine whether an entry in the idle list is available for use.
@@ -290,7 +289,7 @@ IdleConnList::findAndClose(const Comm::ConnectionPointer &conn)
 }
 
 void
-IdleConnList::Read(const Comm::ConnectionPointer &conn, char *, size_t len, Comm::Flag flag, int, void *data)
+IdleConnList::Read(const Comm::ConnectionPointer &conn, char *buf, size_t len, Comm::Flag flag, int xerrno, void *data)
 {
     debugs(48, 3, HERE << len << " bytes from " << conn);
 

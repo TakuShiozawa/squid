@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -48,15 +48,14 @@ public:
     class  RecvdError
     {
     public:
-        RecvdError(): id(0), error_no(SSL_ERROR_NONE), cert(NULL), error_depth(-1) {}
+        RecvdError(): id(0), error_no(SSL_ERROR_NONE), cert(NULL) {}
         RecvdError(const RecvdError &);
         RecvdError & operator =(const RecvdError &);
         void setCert(X509 *);  ///< Sets cert to the given certificate
         int id; ///<  The id of the error
         ssl_error_t error_no; ///< The OpenSSL error code
         std::string error_reason; ///< A string describing the error
-        Security::CertPointer cert; ///< The broken certificate
-        int error_depth; ///< The error depth
+        X509_Pointer cert; ///< The broken certificate
     };
 
     typedef std::vector<RecvdError> RecvdErrors;
@@ -85,7 +84,7 @@ private:
     {
     public:
         std::string name; ///< The certificate Id to use
-        Security::CertPointer cert;       ///< A pointer to certificate
+        X509_Pointer cert;       ///< A pointer to certificate
         CertItem(): cert(NULL) {}
         CertItem(const CertItem &);
         CertItem & operator =(const CertItem &);
@@ -117,8 +116,6 @@ public:
     static const std::string param_error_reason;
     /// Parameter name for passing the error cert ID
     static const std::string param_error_cert;
-    /// Parameter name for passing the error depth
-    static const std::string param_error_depth;
     /// Parameter name for SSL version
     static const std::string param_proto_version;
     /// Parameter name for SSL cipher

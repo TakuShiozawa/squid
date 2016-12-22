@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -413,27 +413,13 @@ process_options(int argc, char *argv[])
         exit(1);
 }
 
-static bool
-token_decode(size_t *decodedLen, uint8_t decoded[], const char *buf)
-{
-    struct base64_decode_ctx ctx;
-    base64_decode_init(&ctx);
-    if (!base64_decode_update(&ctx, decodedLen, decoded, strlen(buf), reinterpret_cast<const uint8_t*>(buf)) ||
-            !base64_decode_final(&ctx)) {
-        SEND_BH("message=\"base64 decode failed\"");
-        fprintf(stderr, "ERROR: base64 decoding failed for: '%s'\n", buf);
-        return false;
-    }
-    return true;
-}
-
 int
 manage_request()
 {
     ntlmhdr *fast_header;
     char buf[HELPER_INPUT_BUFFER];
-    uint8_t decoded[HELPER_INPUT_BUFFER];
-    size_t decodedLen = 0;
+    char decoded[HELPER_INPUT_BUFFER];
+    int decodedLen;
     char helper_command[3];
     int oversized = 0;
     char * ErrorMessage;
@@ -473,8 +459,7 @@ manage_request()
     } while (false);
 
     if ((strlen(buf) > 3) && NTLM_packet_debug_enabled) {
-        if (!token_decode(&decodedLen, decoded, buf+3))
-            return 1;
+        decodedLen = base64_decode(decoded, sizeof(decoded), buf+3);
         strncpy(helper_command, buf, 2);
         debug("Got '%s' from Squid with data:\n", helper_command);
         hex_dump(reinterpret_cast<unsigned char*>(decoded), decodedLen);
@@ -482,16 +467,15 @@ manage_request()
         debug("Got '%s' from Squid\n", buf);
     if (memcmp(buf, "YR", 2) == 0) {    /* refresh-request */
         /* figure out what we got */
-        if (strlen(buf) > 3) {
-            if (!decodedLen /* already decoded*/ && !token_decode(&decodedLen, decoded, buf+3))
-                return 1;
-        } else {
+        if (strlen(buf) > 3)
+            decodedLen = base64_decode(decoded, sizeof(decoded), buf+3);
+        else {
             debug("Negotiate packet not supplied - self generated\n");
             memcpy(decoded, &local_nego, sizeof(local_nego));
             decodedLen = sizeof(local_nego);
         }
         if ((size_t)decodedLen < sizeof(ntlmhdr)) {     /* decoding failure, return error */
-            SEND_ERR("message=\"Packet format error\"");
+            SEND_ERR("message=\"Packet format error, couldn't base64-decode\"");
             return 1;
         }
         /* fast-track-decode request type. */
@@ -510,8 +494,7 @@ manage_request()
             if (c) {
                 SEND_TT(c);
                 if (NTLM_packet_debug_enabled) {
-                    if (!token_decode(&decodedLen, decoded, c))
-                        return 1;
+                    decodedLen = base64_decode(decoded, sizeof(decoded), c);
                     debug("send 'TT' to squid with data:\n");
                     hex_dump(reinterpret_cast<unsigned char*>(decoded), decodedLen);
                     if (NTLM_LocalCall) {
@@ -545,11 +528,10 @@ manage_request()
             return 1;
         }
         /* figure out what we got */
-        if (!decodedLen /* already decoded*/ && !token_decode(&decodedLen, decoded, buf+3))
-            return 1;
+        decodedLen = base64_decode(decoded, sizeof(decoded), buf+3);
 
         if ((size_t)decodedLen < sizeof(ntlmhdr)) {     /* decoding failure, return error */
-            SEND_ERR("message=\"Packet format error\"");
+            SEND_ERR("message=\"Packet format error, couldn't base64-decode\"");
             return 1;
         }
         /* fast-track-decode request type. */

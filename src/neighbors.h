@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -14,13 +14,11 @@
 #include "enums.h"
 #include "ICP.h"
 #include "lookup_t.h"
-#include "typedefs.h" //for IRCB
 
 class HttpRequest;
 class HttpRequestMethod;
 class CachePeer;
 class StoreEntry;
-class URL;
 
 CachePeer *getFirstPeer(void);
 CachePeer *getFirstUpParent(HttpRequest *);
@@ -53,8 +51,9 @@ CachePeer *neighborsDigestSelect(HttpRequest * request);
 void peerNoteDigestLookup(HttpRequest * request, CachePeer * p, lookup_t lookup);
 void peerNoteDigestGone(CachePeer * p);
 int neighborUp(const CachePeer * e);
+CBDUNL peerDestroy;
 const char *neighborTypeStr(const CachePeer * e);
-peer_t neighborType(const CachePeer *, const URL &);
+peer_t neighborType(const CachePeer *, const HttpRequest *);
 void peerConnectFailed(CachePeer *);
 void peerConnectSucceded(CachePeer *);
 void dump_peer_options(StoreEntry *, CachePeer *);

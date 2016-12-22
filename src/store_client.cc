@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -146,25 +146,27 @@ storeClientCopyEvent(void *data)
     storeClientCopy2(sc->entry, sc);
 }
 
-store_client::store_client(StoreEntry *e) :
-    cmp_offset(0),
-#if STORE_CLIENT_LIST_DEBUG
-    owner(cbdataReference(data)),
+store_client::store_client(StoreEntry *e) : entry (e)
+#if USE_DELAY_POOLS
+    , delayId()
 #endif
-    entry(e),
-    type(e->storeClientType()),
-    object_ok(true)
+    , type (e->storeClientType())
+    ,  object_ok(true)
 {
+    cmp_offset = 0;
     flags.disk_io_pending = false;
-    flags.store_copying = false;
-    flags.copy_event_pending = false;
     ++ entry->refcount;
 
-    if (getType() == STORE_DISK_CLIENT) {
+    if (getType() == STORE_DISK_CLIENT)
         /* assert we'll be able to get the data we want */
         /* maybe we should open swapin_sio here */
         assert(entry->swap_filen > -1 || entry->swappingOut());
-    }
+
+#if STORE_CLIENT_LIST_DEBUG
+
+    owner = cbdataReference(data);
+
+#endif
 }
 
 store_client::~store_client()
@@ -306,11 +308,13 @@ storeClientCopy2(StoreEntry * e, store_client * sc)
      * this function
      * XXX: Locking does not prevent calling sc destructor (it only prevents
      * freeing sc memory) so sc may become invalid from C++ p.o.v.
+     *
      */
-    CbcPointer<store_client> tmpLock = sc;
+    cbdataInternalLock(sc);
     assert (!sc->flags.store_copying);
     sc->doCopy(e);
-    assert(!sc->flags.store_copying);
+    assert (!sc->flags.store_copying);
+    cbdataInternalUnlock(sc);
 }
 
 void
@@ -455,7 +459,7 @@ store_client::fileRead()
 }
 
 void
-store_client::readBody(const char *, ssize_t len)
+store_client::readBody(const char *buf, ssize_t len)
 {
     int parsed_header = 0;
 
@@ -509,14 +513,14 @@ store_client::fail()
 }
 
 static void
-storeClientReadHeader(void *data, const char *buf, ssize_t len, StoreIOState::Pointer)
+storeClientReadHeader(void *data, const char *buf, ssize_t len, StoreIOState::Pointer self)
 {
     store_client *sc = (store_client *)data;
     sc->readHeader(buf, len);
 }
 
 static void
-storeClientReadBody(void *data, const char *buf, ssize_t len, StoreIOState::Pointer)
+storeClientReadBody(void *data, const char *buf, ssize_t len, StoreIOState::Pointer self)
 {
     store_client *sc = (store_client *)data;
     sc->readBody(buf, len);
@@ -854,21 +858,26 @@ store_client::dumpStats(MemBuf * output, int clientNumber) const
     if (_callback.pending())
         return;
 
-    output->appendf("\tClient #%d, %p\n", clientNumber, _callback.callback_data);
-    output->appendf("\t\tcopy_offset: %" PRId64 "\n", copyInto.offset);
-    output->appendf("\t\tcopy_size: %" PRIuSIZE "\n", copyInto.length);
-    output->append("\t\tflags:", 8);
+    output->Printf("\tClient #%d, %p\n", clientNumber, _callback.callback_data);
+
+    output->Printf("\t\tcopy_offset: %" PRId64 "\n",
+                   copyInto.offset);
+
+    output->Printf("\t\tcopy_size: %d\n",
+                   (int) copyInto.length);
+
+    output->Printf("\t\tflags:");
 
     if (flags.disk_io_pending)
-        output->append(" disk_io_pending", 16);
+        output->Printf(" disk_io_pending");
 
     if (flags.store_copying)
-        output->append(" store_copying", 14);
+        output->Printf(" store_copying");
 
     if (flags.copy_event_pending)
-        output->append(" copy_event_pending", 19);
+        output->Printf(" copy_event_pending");
 
-    output->append("\n",1);
+    output->Printf("\n");
 }
 
 bool
