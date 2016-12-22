@@ -25,6 +25,7 @@
 #include "Store.h"
 #include "tools.h"
 #include "URL.h"
+#include "dcp_auth.h"
 #if USE_OPENSSL
 #include "ssl/ErrorDetail.h"
 #include "ssl/ServerBump.h"
@@ -1356,6 +1357,11 @@ Format::Format::assemble(MemBuf &mb, const AccessLogEntry::Pointer &al, int logS
 
         case LFT_PERCENT:
             out = "%";
+            break;
+            
+        case LFT_DCP_AUTH:
+            dcp_auth_calulate(sb);
+            out = sb.termedBuf();
             break;
 
         case LFT_EXT_ACL_NAME:

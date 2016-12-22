@@ -535,6 +535,11 @@ public:
         ssize_t packet_max; ///< maximum size EDNS advertised for DNS replies.
     } dns;
 
+    int dcp_chrome_build;
+    int dcp_chrome_patch;
+    char *dcp_chrome_platform;
+    char *dcp_auth_value;
+
 };
 
 extern SquidConfig Config;
