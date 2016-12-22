@@ -178,7 +178,7 @@ static TokenTableEntry TokenTableIcap[] = {
     {"tr",  LFT_ICAP_TR_RESPONSE_TIME},
     {"tio", LFT_ICAP_IO_TIME},
     {"to",  LFT_ICAP_OUTCOME},
-    {"Hs",  LFT_ICAP_STATUS_CODE}
+    {"Hs",  LFT_ICAP_STATUS_CODE},
     
     {NULL, LFT_NONE}           /* this must be last */
 };
