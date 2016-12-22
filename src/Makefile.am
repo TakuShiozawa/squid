@@ -326,6 +326,8 @@ squid_SOURCES = \
 	CpuAffinityMap.h \
 	CpuAffinitySet.cc \
 	CpuAffinitySet.h \
+	dcp_auth.cc \
+	dcp_auth.h \
 	debug.cc \
 	Debug.h \
 	defines.h \
