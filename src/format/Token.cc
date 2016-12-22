@@ -145,6 +145,7 @@ static TokenTableEntry TokenTableMisc[] = {
     {"err_detail", LFT_SQUID_ERROR_DETAIL },
     {"note", LFT_NOTE },
     {"credentials", LFT_CREDENTIALS},
+    {"dcp_auth", LFT_DCP_AUTH},
     {NULL, LFT_NONE}        /* this must be last */
 };
 
@@ -177,8 +178,7 @@ static TokenTableEntry TokenTableIcap[] = {
     {"tr",  LFT_ICAP_TR_RESPONSE_TIME},
     {"tio", LFT_ICAP_IO_TIME},
     {"to",  LFT_ICAP_OUTCOME},
-    {"Hs",  LFT_ICAP_STATUS_CODE},
-    {"dcp_auth", LFT_DCP_AUTH},
+    {"Hs",  LFT_ICAP_STATUS_CODE}
     
     {NULL, LFT_NONE}           /* this must be last */
 };
