@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,21 +12,20 @@
 #include "acl/Checklist.h"
 #include "acl/Ip.h"
 #include "cache_cf.h"
-#include "ConfigParser.h"
 #include "Debug.h"
 #include "ip/tools.h"
 #include "MemBuf.h"
 #include "wordlist.h"
 
 void *
-ACLIP::operator new (size_t)
+ACLIP::operator new (size_t byteCount)
 {
     fatal ("ACLIP::operator new: unused");
     return (void *)1;
 }
 
 void
-ACLIP::operator delete (void *)
+ACLIP::operator delete (void *address)
 {
     fatal ("ACLIP::operator delete: unused");
 }
@@ -479,7 +478,7 @@ ACLIP::parse()
 
     flags.parseFlags();
 
-    while (char *t = ConfigParser::strtokFile()) {
+    while (char *t = strtokFile()) {
         acl_ip_data *q = acl_ip_data::FactoryParse(t);
 
         while (q != NULL) {
@@ -523,7 +522,7 @@ ACLIP::empty() const
 }
 
 int
-ACLIP::match(const Ip::Address &clientip)
+ACLIP::match(Ip::Address &clientip)
 {
     static acl_ip_data ClientAddress;
     /*

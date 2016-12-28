@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,8 +13,7 @@
 #include "ipc/mem/Pointer.h"
 #include "ipc/ReadWriteLock.h"
 #include "SBuf.h"
-#include "store/forward.h"
-#include "store_key_md5.h"
+#include "typedefs.h"
 
 namespace Ipc
 {
@@ -29,19 +28,9 @@ public:
     typedef uint32_t Size;
 
     StoreMapSlice(): size(0), next(-1) {}
-    StoreMapSlice(const StoreMapSlice &o) {
-        size.exchange(o.size);
-        next.exchange(o.next);
-    }
 
-    StoreMapSlice &operator =(const StoreMapSlice &o) {
-        size.store(o.size);
-        next.store(o.next);
-        return *this;
-    }
-
-    std::atomic<Size> size; ///< slice contents size
-    std::atomic<StoreMapSliceId> next; ///< ID of the next entry slice
+    Atomic::WordT<Size> size; ///< slice contents size
+    Atomic::WordT<StoreMapSliceId> next; ///< ID of the next entry slice
 };
 
 /// Maintains shareable information about a StoreEntry as a whole.
@@ -71,7 +60,7 @@ public:
 
 public:
     mutable ReadWriteLock lock; ///< protects slot data below
-    std::atomic<uint8_t> waitingToBeFreed; ///< may be accessed w/o a lock
+    Atomic::WordT<uint8_t> waitingToBeFreed; ///< may be accessed w/o a lock
 
     // fields marked with [app] can be modified when appending-while-reading
 
@@ -83,13 +72,13 @@ public:
         time_t lastref;
         time_t expires;
         time_t lastmod;
-        std::atomic<uint64_t> swap_file_sz; // [app]
+        Atomic::WordT<uint64_t> swap_file_sz; // [app]
         uint16_t refcount;
         uint16_t flags;
     } basics;
 
     /// where the chain of StoreEntry slices begins [app]
-    std::atomic<StoreMapSliceId> start;
+    Atomic::WordT<StoreMapSliceId> start;
 };
 
 /// an array of shareable Items
@@ -125,8 +114,8 @@ public:
     size_t sharedMemorySize() const;
     static size_t SharedMemorySize(const int anAnchorLimit);
 
-    std::atomic<int32_t> count; ///< current number of entries
-    std::atomic<uint32_t> victim; ///< starting point for purge search
+    Atomic::Word count; ///< current number of entries
+    Atomic::WordT<uint32_t> victim; ///< starting point for purge search
     const int capacity; ///< total number of anchors
     Ipc::Mem::FlexibleArray<StoreMapAnchor> items; ///< anchors storage
 };

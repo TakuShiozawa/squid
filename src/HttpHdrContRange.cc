@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,11 +9,11 @@
 /* DEBUG: section 68    HTTP Content-Range Header */
 
 #include "squid.h"
-#include "base/Packable.h"
 #include "Debug.h"
 #include "enums.h"
 #include "HttpHdrContRange.h"
 #include "HttpHeaderTools.h"
+#include "Mem.h"
 
 /*
  *    Currently only byte ranges are supported
@@ -99,15 +99,16 @@ httpHdrRangeRespSpecParseInit(HttpHdrRangeSpec * spec, const char *field, int fl
 }
 
 static void
-httpHdrRangeRespSpecPackInto(const HttpHdrRangeSpec * spec, Packable * p)
+httpHdrRangeRespSpecPackInto(const HttpHdrRangeSpec * spec, Packer * p)
 {
     /* Ensure typecast is safe */
     assert (spec->length >= 0);
 
     if (!known_spec(spec->offset) || !known_spec(spec->length))
-        p->append("*", 1);
+        packerPrintf(p, "*");
     else
-        p->appendf("bytes %" PRId64 "-%" PRId64, spec->offset, spec->offset + spec->length - 1);
+        packerPrintf(p, "bytes %" PRId64 "-%" PRId64,
+                     spec->offset, spec->offset + spec->length - 1);
 }
 
 /*
@@ -200,7 +201,7 @@ httpHdrContRangeDup(const HttpHdrContRange * range)
 }
 
 void
-httpHdrContRangePackInto(const HttpHdrContRange * range, Packable * p)
+httpHdrContRangePackInto(const HttpHdrContRange * range, Packer * p)
 {
     assert(range && p);
     httpHdrRangeRespSpecPackInto(&range->spec, p);
@@ -208,9 +209,9 @@ httpHdrContRangePackInto(const HttpHdrContRange * range, Packable * p)
     assert (range->elength >= 0);
 
     if (!known_spec(range->elength))
-        p->append("/*", 2);
+        packerPrintf(p, "/*");
     else
-        p->appendf("/%" PRId64, range->elength);
+        packerPrintf(p, "/%" PRId64, range->elength);
 }
 
 void

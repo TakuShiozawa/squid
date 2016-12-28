@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -14,7 +14,6 @@
 #include "enums.h"
 #include "icp_opcode.h"
 #include "ip/Address.h"
-#include "security/PeerOptions.h"
 
 //TODO: remove, it is unconditionally defined and always used.
 #define PEER_MULTICAST_SIBLINGS 1
@@ -23,19 +22,16 @@
 #include <openssl/ssl.h>
 #endif
 
+class CachePeerDomainList;
 class NeighborTypeDomainList;
 class PconnPool;
 class PeerDigest;
 class PeerPoolMgr;
 
+// currently a POD
 class CachePeer
 {
-    CBDATA_CLASS(CachePeer);
-
 public:
-    CachePeer();
-    ~CachePeer();
-
     u_int index;
     char *name;
     char *host;
@@ -75,6 +71,7 @@ public:
 #endif
 
     unsigned short http_port;
+    CachePeerDomainList *peer_domain;
     NeighborTypeDomainList *typelist;
     acl_access *access;
 
@@ -119,7 +116,6 @@ public:
 #if PEER_MULTICAST_SIBLINGS
         bool mcast_siblings;
 #endif
-        bool auth_no_keytab;
     } options;
 
     int weight;
@@ -180,11 +176,20 @@ public:
         bool waitingForClose; ///< a conn must close before we open a standby conn
     } standby; ///< optional "cache_peer standby=limit" feature
     char *domain;       /* Forced domain */
-
-    /// security settings for peer connection
-    Security::PeerOptions secure;
-    Security::ContextPtr sslContext;
 #if USE_OPENSSL
+
+    int use_ssl;
+    char *sslcert;
+    char *sslkey;
+    int sslversion;
+    char *ssloptions;
+    char *sslcipher;
+    char *sslcafile;
+    char *sslcapath;
+    char *sslcrlfile;
+    char *sslflags;
+    char *ssldomain;
+    SSL_CTX *sslContext;
     SSL_SESSION *sslSession;
 #endif
 

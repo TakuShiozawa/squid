@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -29,12 +29,12 @@
 #include "esi/Expression.h"
 #include "esi/Segment.h"
 #include "esi/VarState.h"
-#include "fatal.h"
 #include "HttpHdrSc.h"
 #include "HttpHdrScTarget.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
 #include "ip/Address.h"
+#include "Mem.h"
 #include "MemBuf.h"
 #include "profiler/Profiler.h"
 #include "SquidConfig.h"
@@ -81,11 +81,10 @@ typedef ESIContext::esiKick_t esiKick_t;
 
 /* some core operators */
 
-class esiComment : public ESIElement
-{
-    MEMPROXY_CLASS(esiComment);
+/* esiComment */
 
-public:
+struct esiComment : public ESIElement {
+    MEMPROXY_CLASS(esiComment);
     ~esiComment();
     esiComment();
     Pointer makeCacheable() const;
@@ -94,6 +93,8 @@ public:
     void render(ESISegment::Pointer);
     void finish();
 };
+
+MEMPROXY_CLASS_INLINE(esiComment);
 
 #include "esi/Literal.h"
 
@@ -105,24 +106,28 @@ public:
 
 class esiRemove : public ESIElement
 {
-    MEMPROXY_CLASS(esiRemove);
 
 public:
-    esiRemove() : ESIElement() {}
-    virtual ~esiRemove() {}
+    void *operator new (size_t byteCount);
+    void operator delete (void *address);
 
-    virtual void render(ESISegment::Pointer);
-    virtual bool addElement (ESIElement::Pointer);
-    virtual Pointer makeCacheable() const;
-    virtual Pointer makeUsable(esiTreeParentPtr, ESIVarState &) const;
-    virtual void finish() {}
+    esiRemove();
+    void render(ESISegment::Pointer);
+    bool addElement (ESIElement::Pointer);
+    Pointer makeCacheable() const;
+    Pointer makeUsable(esiTreeParentPtr, ESIVarState &) const;
+    void finish();
 };
 
-class esiTry : public ESIElement
-{
+CBDATA_TYPE (esiRemove);
+static FREE esiRemoveFree;
+static ESIElement * esiRemoveNew(void);
+
+/* esiTry */
+
+struct esiTry : public ESIElement {
     MEMPROXY_CLASS(esiTry);
 
-public:
     esiTry(esiTreeParentPtr aParent);
     ~esiTry();
 
@@ -153,13 +158,15 @@ private:
     esiProcessResult_t bestAttemptRV() const;
 };
 
+MEMPROXY_CLASS_INLINE(esiTry);
+
 #include "esi/Var.h"
 
-class esiChoose : public ESIElement
-{
+/* esiChoose */
+
+struct esiChoose : public ESIElement {
     MEMPROXY_CLASS(esiChoose);
 
-public:
     esiChoose(esiTreeParentPtr);
     ~esiChoose();
 
@@ -187,11 +194,12 @@ private:
     void selectElement();
 };
 
-class esiWhen : public esiSequence
-{
-    MEMPROXY_CLASS(esiWhen);
+MEMPROXY_CLASS_INLINE(esiChoose);
 
-public:
+/* esiWhen */
+
+struct esiWhen : public esiSequence {
+    MEMPROXY_CLASS(esiWhen);
     esiWhen(esiTreeParentPtr aParent, int attributes, const char **attr, ESIVarState *);
     ~esiWhen();
     Pointer makeCacheable() const;
@@ -209,7 +217,13 @@ private:
     void evaluate();
 };
 
+MEMPROXY_CLASS_INLINE(esiWhen);
+
+/* esiOtherwise */
+
 struct esiOtherwise : public esiSequence {
+    //    void *operator new (size_t byteCount);
+    //    void operator delete (void *address);
     esiOtherwise(esiTreeParentPtr aParent) : esiSequence (aParent) {}
 };
 
@@ -559,8 +573,8 @@ ESIContext::send ()
 
 #endif
 
-    if (!(rep || (outbound.getRaw() &&
-                  outbound->len && (outbound_offset <= outbound->len)))) {
+    if (!(rep != NULL || (outbound.getRaw() &&
+                          outbound->len && (outbound_offset <= outbound->len)))) {
         debugs(86, 5, "ESIContext::send: Nothing to send.");
         return 0;
     }
@@ -604,18 +618,18 @@ ESIContext::send ()
     flags.clientwantsdata = 0;
     debugs(86, 5, "ESIContext::send: this=" << this << " Client no longer wants data ");
     /* Deal with re-entrancy */
-    HttpReply *temprep = rep;
+    HttpReply::Pointer temprep = rep;
     rep = NULL; /* freed downstream */
 
-    if (temprep && varState)
-        varState->buildVary (temprep);
+    if (temprep != NULL && varState)
+        varState->buildVary(temprep.getRaw());
 
     {
         StoreIOBuffer tempBuffer;
         tempBuffer.length = len;
         tempBuffer.offset = pos - len;
         tempBuffer.data = next->readBuffer.data;
-        clientStreamCallback (thisNode, http, temprep, tempBuffer);
+        clientStreamCallback (thisNode, http, temprep.getRaw(), tempBuffer);
     }
 
     if (len == 0)
@@ -839,10 +853,10 @@ ESIContextNew (HttpReply *rep, clientStreamNode *thisNode, ClientHttpRequest *ht
         /* remove specific headers for ESI to prevent
          * downstream cache confusion */
         HttpHeader *hdr = &rep->header;
-        hdr->delById(Http::HdrType::ACCEPT_RANGES);
-        hdr->delById(Http::HdrType::ETAG);
-        hdr->delById(Http::HdrType::CONTENT_LENGTH);
-        hdr->delById(Http::HdrType::CONTENT_MD5);
+        hdr->delById(HDR_ACCEPT_RANGES);
+        hdr->delById(HDR_ETAG);
+        hdr->delById(HDR_CONTENT_LENGTH);
+        hdr->delById(HDR_CONTENT_MD5);
         rv->tree = new esiSequence (rv, true);
         rv->thisNode = thisNode;
         rv->http = http;
@@ -952,7 +966,7 @@ ESIContext::start(const char *el, const char **attr, size_t attrCount)
     ESIElement::Pointer element;
     int specifiedattcount = attrCount * 2;
     char *position;
-    assert (ellen < sizeof (localbuf)); /* prevent unexpected overruns. */
+    Must(ellen < sizeof(localbuf)); /* prevent unexpected overruns. */
 
     debugs(86, 5, "ESIContext::Start: element '" << el << "' with " << specifiedattcount << " tags");
 
@@ -966,15 +980,17 @@ ESIContext::start(const char *el, const char **attr, size_t attrCount)
         /* Spit out elements we aren't interested in */
         localbuf[0] = '<';
         localbuf[1] = '\0';
-        assert (xstrncpy (&localbuf[1], el, sizeof(localbuf) - 2));
+        xstrncpy(&localbuf[1], el, sizeof(localbuf) - 2);
         position = localbuf + strlen (localbuf);
 
         for (i = 0; i < specifiedattcount && attr[i]; i += 2) {
+            Must(static_cast<size_t>(position - localbuf) < sizeof(localbuf) - 1);
             *position = ' ';
             ++position;
             /* TODO: handle thisNode gracefully */
-            assert (xstrncpy (position, attr[i], sizeof(localbuf) + (position - localbuf)));
+            xstrncpy(position, attr[i], sizeof(localbuf) - (position - localbuf));
             position += strlen (position);
+            Must(static_cast<size_t>(position - localbuf) < sizeof(localbuf) - 2);
             *position = '=';
             ++position;
             *position = '\"';
@@ -983,18 +999,21 @@ ESIContext::start(const char *el, const char **attr, size_t attrCount)
             char ch;
             while ((ch = *chPtr++) != '\0') {
                 if (ch == '\"') {
-                    assert( xstrncpy(position, "&quot;", sizeof(localbuf) + (position-localbuf)) );
+                    Must(static_cast<size_t>(position - localbuf) < sizeof(localbuf) - 6);
+                    xstrncpy(position, "&quot;", sizeof(localbuf) - (position-localbuf));
                     position += 6;
                 } else {
+                    Must(static_cast<size_t>(position - localbuf) < sizeof(localbuf) - 1);
                     *position = ch;
                     ++position;
                 }
             }
-            position += strlen (position);
+            Must(static_cast<size_t>(position - localbuf) < sizeof(localbuf) - 1);
             *position = '\"';
             ++position;
         }
 
+        Must(static_cast<size_t>(position - localbuf) < sizeof(localbuf) - 2);
         *position = '>';
         ++position;
         *position = '\0';
@@ -1016,7 +1035,7 @@ ESIContext::start(const char *el, const char **attr, size_t attrCount)
 
     case ESIElement::ESI_ELEMENT_REMOVE:
         /* Put on the stack to allow skipping of 'invalid' markup */
-        element = new esiRemove();
+        element = esiRemoveNew ();
         break;
 
     case ESIElement::ESI_ELEMENT_TRY:
@@ -1080,11 +1099,11 @@ ESIContext::end(const char *el)
     switch (ESIElement::IdentifyElement (el)) {
 
     case ESIElement::ESI_ELEMENT_NONE:
-        assert (ellen < sizeof (localbuf)); /* prevent unexpected overruns. */
+        Must(ellen < sizeof(localbuf) - 3); /* prevent unexpected overruns. */
         /* Add elements we aren't interested in */
         localbuf[0] = '<';
         localbuf[1] = '/';
-        assert (xstrncpy (&localbuf[2], el, sizeof(localbuf) - 3));
+        xstrncpy(&localbuf[2], el, sizeof(localbuf) - 3);
         position = localbuf + strlen (localbuf);
         *position = '>';
         ++position;
@@ -1240,7 +1259,7 @@ ESIContext::parse()
         ++parserState.stackdepth;
     }
 
-    if (rep && !parserState.inited())
+    if (rep != NULL && !parserState.inited())
         parserState.init(this);
 
     /* we have data */
@@ -1379,7 +1398,7 @@ ESIContext::freeResources ()
 {
     debugs(86, 5, HERE << "Freeing for this=" << this);
 
-    HTTPMSGUNLOCK(rep);
+    rep = NULL; // refcounted
 
     finishChildren ();
 
@@ -1484,10 +1503,11 @@ esiLiteral::~esiLiteral()
     cbdataReferenceDone (varState);
 }
 
-esiLiteral::esiLiteral(ESISegment::Pointer aSegment) :
-    buffer(aSegment),
-    varState(nullptr)
+esiLiteral::esiLiteral(ESISegment::Pointer aSegment)
 {
+    buffer = aSegment;
+    /* we've been handed a complete, processed string */
+    varState = NULL;
     /* Nothing to do */
     flags.donevars = 1;
 }
@@ -1578,6 +1598,42 @@ esiLiteral::makeUsable(esiTreeParentPtr , ESIVarState &newVarState) const
 }
 
 /* esiRemove */
+void
+esiRemoveFree (void *data)
+{
+    esiRemove *thisNode = (esiRemove *)data;
+    debugs(86, 5, "esiRemoveFree " << thisNode);
+}
+
+void *
+esiRemove::operator new(size_t byteCount)
+{
+    assert (byteCount == sizeof (esiRemove));
+    void *rv;
+    CBDATA_INIT_TYPE_FREECB(esiRemove, esiRemoveFree);
+    rv = (void *)cbdataAlloc (esiRemove);
+    return rv;
+}
+
+void
+esiRemove::operator delete (void *address)
+{
+    cbdataFree (address);
+}
+
+ESIElement *
+esiRemoveNew ()
+{
+    return new esiRemove;
+}
+
+esiRemove::esiRemove()
+{}
+
+void
+esiRemove::finish()
+{}
+
 void
 esiRemove::render(ESISegment::Pointer output)
 {
@@ -1874,16 +1930,70 @@ esiTry::finish()
     except = NULL;
 }
 
+/* esiAttempt */
+#if 0
+void *
+esiAttempt::operator new(size_t byteCount)
+{
+    assert (byteCount == sizeof (esiAttempt));
+
+}
+
+void
+esiAttempt::operator delete (void *address)
+{
+    cbdataFree (address);
+}
+
+#endif
+
+/* esiExcept */
+#if 0
+void *
+esiExcept::operator new(size_t byteCount)
+{
+    assert (byteCount == sizeof (esiExcept));
+    void *rv;
+    CBDATA_INIT_TYPE_FREECB(esiExcept, esiSequence::Free);
+    rv = (void *)cbdataAlloc (esiExcept);
+    return rv;
+}
+
+void
+esiExcept::operator delete (void *address)
+{
+    cbdataFree (address);
+}
+
+#endif
+
+/* ESIVar */
+#if 0
+void *
+esiVar::operator new(size_t byteCount)
+{
+    assert (byteCount == sizeof (esiVar));
+    void *rv;
+    CBDATA_INIT_TYPE_FREECB(esiVar, esiSequence::Free);
+    rv = (void *)cbdataAlloc (esiVar);
+    return rv;
+}
+
+void
+esiVar::operator delete (void *address)
+{
+    cbdataFree (address);
+}
+
+#endif
+
 /* esiChoose */
 esiChoose::~esiChoose()
 {
     debugs(86, 5, "esiChoose::~esiChoose " << this);
 }
 
-esiChoose::esiChoose(esiTreeParentPtr aParent) :
-    elements(),
-    chosenelement(-1),
-    parent(aParent)
+esiChoose::esiChoose(esiTreeParentPtr aParent) : elements (), chosenelement (-1),parent (aParent)
 {}
 
 void
@@ -2272,6 +2382,26 @@ esiWhen::makeUsable(esiTreeParentPtr newParent, ESIVarState &newVarState) const
     resultW->evaluate();
     return result;
 }
+
+/* esiOtherwise */
+#if 0
+void *
+esiOtherwise::operator new(size_t byteCount)
+{
+    assert (byteCount == sizeof (esiOtherwise));
+    void *rv;
+    CBDATA_INIT_TYPE_FREECB(esiOtherwise, esiSequence::Free);
+    rv = (void *)cbdataAlloc (esiOtherwise);
+    return rv;
+}
+
+void
+esiOtherwise::operator delete (void *address)
+{
+    cbdataFree (address);
+}
+
+#endif
 
 /* TODO: implement surrogate targeting and control processing */
 int

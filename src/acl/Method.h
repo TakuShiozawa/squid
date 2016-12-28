@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,7 +11,7 @@
 
 #include "acl/Strategised.h"
 #include "acl/Strategy.h"
-#include "http/RequestMethod.h"
+#include "HttpRequestMethod.h"
 
 /// \ingroup ACLAPI
 class ACLMethodStrategy : public ACLStrategy<HttpRequestMethod>

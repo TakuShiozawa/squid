@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,9 +19,9 @@
 #include "squid.h"
 #include "CachePeer.h"
 #include "cbdata.h"
+#include "disk.h"
 #include "event.h"
 #include "fde.h"
-#include "fs_io.h"
 #include "FwdState.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
@@ -29,14 +29,15 @@
 #include "internal.h"
 #include "ip/Address.h"
 #include "log/File.h"
+#include "Mem.h"
 #include "MemObject.h"
 #include "mgr/Registration.h"
 #include "mime_header.h"
 #include "neighbors.h"
-#include "SquidConfig.h"
 #include "SquidTime.h"
 #include "Store.h"
 #include "StoreClient.h"
+#include "SwapDir.h"
 #include "tools.h"
 #include "URL.h"
 #include "wordlist.h"
@@ -58,37 +59,7 @@ typedef enum {
     STATE_BODY
 } netdb_conn_state_t;
 
-class netdbExchangeState
-{
-    CBDATA_CLASS(netdbExchangeState);
-
-public:
-    netdbExchangeState(CachePeer *aPeer, HttpRequest *theReq) :
-        p(cbdataReference(aPeer)),
-        e(NULL),
-        sc(NULL),
-        r(theReq),
-        used(0),
-        buf_sz(NETDB_REQBUF_SZ),
-        buf_ofs(0),
-        connstate(STATE_HEADER)
-    {
-        *buf = 0;
-
-        assert(NULL != r);
-        HTTPMSGLOCK(r);
-        // TODO: check if we actually need to do this. should be implicit
-        r->http_ver = Http::ProtocolVersion();
-    }
-
-    ~netdbExchangeState() {
-        debugs(38, 3, e->url());
-        storeUnregister(sc, e, this);
-        e->unlock("netdbExchangeDone");
-        HTTPMSGUNLOCK(r);
-        cbdataReferenceDone(p);
-    }
-
+typedef struct {
     CachePeer *p;
     StoreEntry *e;
     store_client *sc;
@@ -98,9 +69,7 @@ public:
     char buf[NETDB_REQBUF_SZ];
     int buf_ofs;
     netdb_conn_state_t connstate;
-};
-
-CBDATA_CLASS_INIT(netdbExchangeState);
+} netdbExchangeState;
 
 static hash_table *addr_table = NULL;
 static hash_table *host_table = NULL;
@@ -118,9 +87,13 @@ static net_db_peer *netdbPeerByName(const netdbEntry * n, const char *);
 static net_db_peer *netdbPeerAdd(netdbEntry * n, CachePeer * e);
 static const char *netdbPeerName(const char *name);
 static IPH netdbSendPing;
+static QS sortPeerByRtt;
+static QS sortByRtt;
+static QS netdbLRU;
 static FREE netdbFreeNameEntry;
 static FREE netdbFreeNetdbEntry;
 static STCB netdbExchangeHandleReply;
+static void netdbExchangeDone(void *);
 
 /* We have to keep a local list of CachePeer names.  The Peers structure
  * gets freed during a reconfigure.  We want this database to
@@ -292,7 +265,7 @@ netdbAdd(Ip::Address &addr)
 }
 
 static void
-netdbSendPing(const ipcache_addrs *ia, const Dns::LookupDetails &, void *data)
+netdbSendPing(const ipcache_addrs *ia, const DnsLookupDetails &, void *data)
 {
     Ip::Address addr;
     char *hostname = NULL;
@@ -717,15 +690,16 @@ netdbExchangeHandleReply(void *data, StoreIOBuffer receivedData)
 
     if (!cbdataReferenceValid(ex->p)) {
         debugs(38, 3, "netdbExchangeHandleReply: Peer became invalid");
-        delete ex;
+        netdbExchangeDone(ex);
         return;
     }
 
     debugs(38, 3, "netdbExchangeHandleReply: for '" << ex->p->host << ":" << ex->p->http_port << "'");
 
-    if (receivedData.length == 0 && !receivedData.flags.error) {
+    if (receivedData.length == 0 &&
+            !receivedData.flags.error) {
         debugs(38, 3, "netdbExchangeHandleReply: Done");
-        delete ex;
+        netdbExchangeDone(ex);
         return;
     }
 
@@ -750,7 +724,7 @@ netdbExchangeHandleReply(void *data, StoreIOBuffer receivedData)
             debugs(38, 3, "netdbExchangeHandleReply: reply status " << rep->sline.status());
 
             if (rep->sline.status() != Http::scOkay) {
-                delete ex;
+                netdbExchangeDone(ex);
                 return;
             }
 
@@ -816,7 +790,7 @@ netdbExchangeHandleReply(void *data, StoreIOBuffer receivedData)
 
             default:
                 debugs(38, DBG_IMPORTANT, "netdbExchangeHandleReply: corrupt data, aborting");
-                delete ex;
+                netdbExchangeDone(ex);
                 return;
             }
         }
@@ -872,7 +846,7 @@ netdbExchangeHandleReply(void *data, StoreIOBuffer receivedData)
 
     if (EBIT_TEST(ex->e->flags, ENTRY_ABORTED)) {
         debugs(38, 3, "netdbExchangeHandleReply: ENTRY_ABORTED");
-        delete ex;
+        netdbExchangeDone(ex);
     } else if (ex->e->store_status == STORE_PENDING) {
         StoreIOBuffer tempBuffer;
         tempBuffer.offset = ex->used;
@@ -882,6 +856,18 @@ netdbExchangeHandleReply(void *data, StoreIOBuffer receivedData)
         storeClientCopy(ex->sc, ex->e, tempBuffer,
                         netdbExchangeHandleReply, ex);
     }
+}
+
+static void
+netdbExchangeDone(void *data)
+{
+    netdbExchangeState *ex = (netdbExchangeState *)data;
+    debugs(38, 3, "netdbExchangeDone: " << ex->e->url()  );
+    HTTPMSGUNLOCK(ex->r);
+    storeUnregister(ex->sc, ex->e, ex);
+    ex->e->unlock("netdbExchangeDone");
+    cbdataReferenceDone(ex->p);
+    cbdataFree(ex);
 }
 
 static void
@@ -1099,18 +1085,18 @@ netdbHostData(const char *host, int *samp, int *rtt, int *hops)
 }
 
 void
-netdbUpdatePeer(const URL &url, CachePeer * e, int irtt, int ihops)
+netdbUpdatePeer(HttpRequest * r, CachePeer * e, int irtt, int ihops)
 {
 #if USE_ICMP
     netdbEntry *n;
     double rtt = (double) irtt;
     double hops = (double) ihops;
     net_db_peer *p;
-    debugs(38, 3, url.host() << ", " << ihops << " hops, " << irtt << " rtt");
-    n = netdbLookupHost(url.host());
+    debugs(38, 3, "netdbUpdatePeer: '" << r->GetHost() << "', " << ihops << " hops, " << irtt << " rtt");
+    n = netdbLookupHost(r->GetHost());
 
     if (n == NULL) {
-        debugs(38, 3, "host " << url.host() << " not found");
+        debugs(38, 3, "netdbUpdatePeer: host '" << r->GetHost() << "' not found");
         return;
     }
 
@@ -1281,39 +1267,50 @@ netdbBinaryExchange(StoreEntry * s)
     s->complete();
 }
 
+#if USE_ICMP
+CBDATA_TYPE(netdbExchangeState);
+#endif
+
 void
 netdbExchangeStart(void *data)
 {
 #if USE_ICMP
     CachePeer *p = (CachePeer *)data;
-    static const SBuf netDB("netdb");
-    char *uri = internalRemoteUri(p->host, p->http_port, "/squid-internal-dynamic/", netDB);
+    char *uri;
+    netdbExchangeState *ex;
+    StoreIOBuffer tempBuffer;
+    CBDATA_INIT_TYPE(netdbExchangeState);
+    ex = cbdataAlloc(netdbExchangeState);
+    ex->p = cbdataReference(p);
+    uri = internalRemoteUri(p->host, p->http_port, "/squid-internal-dynamic/", "netdb");
     debugs(38, 3, "netdbExchangeStart: Requesting '" << uri << "'");
     assert(NULL != uri);
-    HttpRequest *req = HttpRequest::CreateFromUrl(uri);
+    ex->r = HttpRequest::CreateFromUrl(uri);
 
-    if (req == NULL) {
+    if (NULL == ex->r) {
         debugs(38, DBG_IMPORTANT, "netdbExchangeStart: Bad URI " << uri);
         return;
     }
 
-    netdbExchangeState *ex = new netdbExchangeState(p, req);
+    HTTPMSGLOCK(ex->r);
+    assert(NULL != ex->r);
+    ex->r->http_ver = Http::ProtocolVersion(1,1);
+    ex->connstate = STATE_HEADER;
     ex->e = storeCreateEntry(uri, uri, RequestFlags(), Http::METHOD_GET);
+    ex->buf_sz = NETDB_REQBUF_SZ;
     assert(NULL != ex->e);
-
-    StoreIOBuffer tempBuffer;
+    ex->sc = storeClientListAdd(ex->e, ex);
+    tempBuffer.offset = 0;
     tempBuffer.length = ex->buf_sz;
     tempBuffer.data = ex->buf;
-
-    ex->sc = storeClientListAdd(ex->e, ex);
-
     storeClientCopy(ex->sc, ex->e, tempBuffer,
                     netdbExchangeHandleReply, ex);
     ex->r->flags.loopDetected = true;   /* cheat! -- force direct */
 
-    // XXX: send as Proxy-Authenticate instead
     if (p->login)
-        ex->r->url.userInfo(SBuf(p->login));
+        xstrncpy(ex->r->login, p->login, MAX_LOGIN_SZ);
+
+    urlCanonical(ex->r);
 
     FwdState::fwdStart(Comm::ConnectionPointer(), ex->e, ex->r);
 
@@ -1329,11 +1326,11 @@ netdbClosestParent(HttpRequest * request)
     const ipcache_addrs *ia;
     net_db_peer *h;
     int i;
-    n = netdbLookupHost(request->url.host());
+    n = netdbLookupHost(request->GetHost());
 
     if (NULL == n) {
         /* try IP addr */
-        ia = ipcache_gethostbyname(request->url.host(), 0);
+        ia = ipcache_gethostbyname(request->GetHost(), 0);
 
         if (NULL != ia)
             n = netdbLookupAddr(ia->in_addrs[ia->cur]);
@@ -1364,7 +1361,7 @@ netdbClosestParent(HttpRequest * request)
         if (NULL == p)      /* not found */
             continue;
 
-        if (neighborType(p, request->url) != PEER_PARENT)
+        if (neighborType(p, request) != PEER_PARENT)
             continue;
 
         if (!peerHTTPOkay(p, request))  /* not allowed */

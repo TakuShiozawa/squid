@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -54,7 +54,12 @@ public:
     virtual void maybeReadVirginBody() = 0;
 
     /// abnormal transaction termination; reason is for debugging only
-    virtual void abortTransaction(const char *reason) = 0;
+    virtual void abortAll(const char *reason) = 0;
+
+    /// abnormal data transfer termination
+    /// \retval true the transaction will be terminated (abortAll called)
+    /// \retval false the transaction will survive
+    virtual bool abortOnData(const char *reason);
 
     /// a hack to reach HttpStateData::orignal_request
     virtual  HttpRequest *originalRequest();
@@ -99,7 +104,9 @@ protected:
     virtual void sentRequestBody(const CommIoCbParams &io) = 0;
     virtual void doneSendingRequestBody() = 0;
 
-    virtual void closeServer() = 0;            /**< end communication with the server */
+    /// Use this to end communication with the server. The call cancels our
+    /// closure handler and tells FwdState to forget about the connection.
+    virtual void closeServer() = 0;
     virtual bool doneWithServer() const = 0;   /**< did we end communication? */
     /// whether we may receive more virgin response body bytes
     virtual bool mayReadVirginReplyBody() const = 0;
@@ -144,10 +151,7 @@ protected:
     void adaptOrFinalizeReply();
     void addVirginReplyBody(const char *buf, ssize_t len);
     void storeReplyBody(const char *buf, ssize_t len);
-    /// \deprecated use SBuf I/O API and calcBufferSpaceToReserve() instead
     size_t replyBodySpace(const MemBuf &readBuf, const size_t minSpace) const;
-    /// determine how much space the buffer needs to reserve
-    size_t calcBufferSpaceToReserve(const size_t space, const size_t wantSpace) const;
 
     void adjustBodyBytesRead(const int64_t delta);
 
@@ -173,6 +177,10 @@ protected:
     bool startedAdaptation;
 #endif
     bool receivedWholeRequestBody; ///< handleRequestBodyProductionEnded called
+
+    /// whether we should not be talking to FwdState; XXX: clear fwd instead
+    /// points to a string literal which is used only for debugging
+    const char *doneWithFwd;
 
 private:
     void sendBodyIsTooLargeError();

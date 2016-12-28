@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -105,9 +105,6 @@ main(int argc, char *argv[])
         exit(1);
     }
     setbuf(stdout, NULL);
-    /* XXX stderr should not be closed, but in order to support squid must be
-     * able to collect and manage modules's stderr first.
-     */
     close(2);
     t = open(_PATH_DEVNULL, O_RDWR);
     assert(t > -1);
@@ -122,7 +119,7 @@ main(int argc, char *argv[])
                 /* try to detect the 32-bit file too big write error and rotate */
                 int err = ferror(fp);
                 clearerr(fp);
-                if (err != 0) {
+                if (err < 0) {
                     /* file too big - recover by rotating the logs and starting a new one.
                      * out of device space - recover by rotating and hoping that rotation count drops a big one.
                      */

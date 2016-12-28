@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -123,8 +123,7 @@ void AsyncJob::callStart(AsyncCall &call)
            typeName << " status in:" << status());
 }
 
-void
-AsyncJob::callException(const std::exception &)
+void AsyncJob::callException(const std::exception &e)
 {
     // we must be called asynchronously and hence, the caller must lock us
     Must(cbdataReferenceValid(toCbdata()));
@@ -162,9 +161,10 @@ const char *AsyncJob::status() const
 
     buf.append(" [", 2);
     if (stopReason != NULL) {
-        buf.appendf("Stopped, reason:%s", stopReason);
+        buf.Printf("Stopped, reason:");
+        buf.Printf("%s",stopReason);
     }
-    buf.appendf(" %s%u]", id.Prefix, id.value);
+    buf.Printf(" %s%u]", id.prefix(), id.value);
     buf.terminate();
 
     return buf.content();

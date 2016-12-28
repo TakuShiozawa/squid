@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -192,7 +192,7 @@ ACLChecklist::~ACLChecklist()
 {
     assert (!asyncInProgress());
 
-    changeAcl(nullptr);
+    cbdataReferenceDone(accessList);
 
     debugs(28, 4, "ACLChecklist::~ACLChecklist: destroyed " << this);
 }
@@ -314,7 +314,9 @@ ACLChecklist::fastCheck(const Acl::Tree * list)
 
     // Concurrent checks are not supported, but sequential checks are, and they
     // may use a mixture of fastCheck(void) and fastCheck(list) calls.
-    const Acl::Tree * const savedList = changeAcl(list);
+    const Acl::Tree * const savedList = accessList;
+
+    accessList = cbdataReference(list);
 
     // assume DENY/ALLOW on mis/matches due to action-free accessList
     // matchAndFinish() takes care of the ALLOW case
@@ -323,7 +325,8 @@ ACLChecklist::fastCheck(const Acl::Tree * list)
     if (!finished())
         markFinished(ACCESS_DENIED, "ACLs failed to match");
 
-    changeAcl(savedList);
+    cbdataReferenceDone(accessList);
+    accessList = savedList;
     occupied_ = false;
     PROF_stop(aclCheckFast);
     return currentAnswer();
@@ -394,7 +397,7 @@ bool
 ACLChecklist::bannedAction(const allow_t &action) const
 {
     const bool found = std::find(bannedActions_.begin(), bannedActions_.end(), action) != bannedActions_.end();
-    debugs(28, 5, "Action '" << action << "/" << action.kind << (found ? " is " : "is not") << " banned");
+    debugs(28, 5, "Action '" << action << "/" << action.kind << (found ? "' is " : "' is not") << " banned");
     return found;
 }
 

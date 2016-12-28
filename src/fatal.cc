@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,7 +10,7 @@
 #include "Debug.h"
 #include "fatal.h"
 #include "globals.h"
-#include "store/Disks.h"
+#include "SwapDir.h"
 #include "tools.h"
 
 static void
@@ -42,6 +42,9 @@ fatal(const char *message)
     shutting_down = 1;
 
     releaseServerSockets();
+    /* check for store_dirs_rebuilding because fatal() is often
+     * used in early initialization phases, long before we ever
+     * get to the store log. */
 
     /* XXX: this should be turned into a callback-on-fatal, or
      * a mandatory-shutdown-event or something like that.
@@ -58,7 +61,8 @@ fatal(const char *message)
      */
     leave_suid();
 
-    storeDirWriteCleanLogs(0);
+    if (0 == StoreController::store_dirs_rebuilding)
+        storeDirWriteCleanLogs(0);
 
     fatal_common(message);
 

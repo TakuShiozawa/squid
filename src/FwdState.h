@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -16,7 +16,6 @@
 #include "fde.h"
 #include "http/StatusCode.h"
 #include "ip/Address.h"
-#include "security/forward.h"
 #if USE_OPENSSL
 #include "ssl/support.h"
 #endif
@@ -35,6 +34,7 @@ namespace Ssl
 {
 class ErrorDetail;
 class CertValidationResponse;
+class PeerConnectorAnswer;
 };
 #endif
 
@@ -57,8 +57,6 @@ class HelperReply;
 
 class FwdState : public RefCountable
 {
-    CBDATA_CLASS(FwdState);
-
 public:
     typedef RefCount<FwdState> Pointer;
     ~FwdState();
@@ -114,7 +112,9 @@ private:
     void completed();
     void retryOrBail();
     ErrorState *makeConnectingError(const err_type type) const;
-    void connectedToPeer(Security::EncryptorAnswer &answer);
+#if USE_OPENSSL
+    void connectedToPeer(Ssl::PeerConnectorAnswer &answer);
+#endif
     static void RegisterWithCacheManager(void);
 
     /// stops monitoring server connection for closure and updates pconn stats
@@ -152,9 +152,14 @@ private:
 
     Comm::ConnectionPointer serverConn; ///< a successfully opened connection to a server.
 
+    AsyncCall::Pointer closeHandler; ///< The serverConn close handler
+
     /// possible pconn race states
     typedef enum { raceImpossible, racePossible, raceHappened } PconnRace;
     PconnRace pconnRace; ///< current pconn race state
+
+    // NP: keep this last. It plays with private/public
+    CBDATA_CLASS2(FwdState);
 };
 
 void getOutgoingAddress(HttpRequest * request, Comm::ConnectionPointer conn);

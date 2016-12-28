@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -111,7 +111,7 @@ Auth::Ntlm::Config::type() const
 /* Initialize helpers and the like for this auth scheme. Called AFTER parsing the
  * config file */
 void
-Auth::Ntlm::Config::init(Auth::Config *)
+Auth::Ntlm::Config::init(Auth::Config * scheme)
 {
     if (authenticateProgram) {
 
@@ -164,7 +164,7 @@ Auth::Ntlm::Config::configured() const
 /* NTLM Scheme */
 
 void
-Auth::Ntlm::Config::fixHeader(Auth::UserRequest::Pointer auth_user_request, HttpReply *rep, Http::HdrType hdrType, HttpRequest * request)
+Auth::Ntlm::Config::fixHeader(Auth::UserRequest::Pointer auth_user_request, HttpReply *rep, http_hdr_type hdrType, HttpRequest * request)
 {
     if (!authenticateProgram)
         return;
@@ -224,8 +224,7 @@ Auth::Ntlm::Config::fixHeader(Auth::UserRequest::Pointer auth_user_request, Http
 static void
 authenticateNTLMStats(StoreEntry * sentry)
 {
-    if (ntlmauthenticators)
-        ntlmauthenticators->packStatsInto(sentry, "NTLM Authenticator Statistics");
+    helperStatefulStats(sentry, ntlmauthenticators, "NTLM Authenticator Statistics");
 }
 
 /*

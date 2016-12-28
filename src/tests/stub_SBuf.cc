@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -26,7 +26,6 @@ SBufStats& SBufStats::operator +=(const SBufStats&) STUB_RETVAL(*this)
 SBuf::SBuf() {}
 SBuf::SBuf(const SBuf &S) {}
 SBuf::SBuf(const char *S, size_type n) {}
-SBuf::SBuf(const char *S) {}
 SBuf::SBuf(const String &S) {}
 SBuf::SBuf(const std::string &s) {}
 SBuf::~SBuf() {}
@@ -54,6 +53,7 @@ char *SBuf::rawSpace(size_type minSize) STUB_RETVAL(NULL)
 void SBuf::forceSize(size_type newSize) STUB
 const char* SBuf::c_str() STUB_RETVAL("")
 void SBuf::reserveCapacity(size_type minCapacity) STUB
+SBuf::size_type SBuf::reserve(const SBufReservationRequirements &) STUB_RETVAL(0)
 SBuf& SBuf::chop(size_type pos, size_type n) STUB_RETVAL(*this)
 SBuf& SBuf::trim(const SBuf &toRemove, bool atBeginning, bool atEnd) STUB_RETVAL(*this)
 SBuf SBuf::substr(size_type pos, size_type n) const STUB_RETVAL(*this)

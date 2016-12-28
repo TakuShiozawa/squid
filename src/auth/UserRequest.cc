@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -19,7 +19,6 @@
 #include "auth/UserRequest.h"
 #include "client_side.h"
 #include "comm/Connection.h"
-#include "fatal.h"
 #include "format/Format.h"
 #include "HttpReply.h"
 #include "HttpRequest.h"
@@ -76,14 +75,14 @@ Auth::UserRequest::valid() const
 }
 
 void *
-Auth::UserRequest::operator new (size_t)
+Auth::UserRequest::operator new (size_t byteCount)
 {
     fatal("Auth::UserRequest not directly allocatable\n");
     return (void *)1;
 }
 
 void
-Auth::UserRequest::operator delete (void *)
+Auth::UserRequest::operator delete (void *address)
 {
     fatal("Auth::UserRequest child failed to override operator delete\n");
 }
@@ -193,11 +192,11 @@ Auth::UserRequest::direction()
 }
 
 void
-Auth::UserRequest::addAuthenticationInfoHeader(HttpReply *, int)
+Auth::UserRequest::addAuthenticationInfoHeader(HttpReply * rep, int accelerated)
 {}
 
 void
-Auth::UserRequest::addAuthenticationInfoTrailer(HttpReply *, int)
+Auth::UserRequest::addAuthenticationInfoTrailer(HttpReply * rep, int accelerated)
 {}
 
 void
@@ -218,7 +217,7 @@ Auth::UserRequest::connLastHeader()
  * This is basically a handle approach.
  */
 static void
-authenticateAuthenticateUser(Auth::UserRequest::Pointer auth_user_request, HttpRequest * request, ConnStateData * conn, Http::HdrType type)
+authenticateAuthenticateUser(Auth::UserRequest::Pointer auth_user_request, HttpRequest * request, ConnStateData * conn, http_hdr_type type)
 {
     assert(auth_user_request.getRaw() != NULL);
 
@@ -271,7 +270,7 @@ authTryGetUser(Auth::UserRequest::Pointer auth_user_request, ConnStateData * con
  * Caller is responsible for locking and unlocking their *auth_user_request!
  */
 AuthAclState
-Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, Http::HdrType headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr, AccessLogEntry::Pointer &al)
+Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, http_hdr_type headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr, AccessLogEntry::Pointer &al)
 {
     const char *proxy_auth;
     assert(headertype != 0);
@@ -433,7 +432,7 @@ Auth::UserRequest::authenticate(Auth::UserRequest::Pointer * auth_user_request, 
 }
 
 AuthAclState
-Auth::UserRequest::tryToAuthenticateAndSetAuthUser(Auth::UserRequest::Pointer * aUR, Http::HdrType headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr, AccessLogEntry::Pointer &al)
+Auth::UserRequest::tryToAuthenticateAndSetAuthUser(Auth::UserRequest::Pointer * aUR, http_hdr_type headertype, HttpRequest * request, ConnStateData * conn, Ip::Address &src_addr, AccessLogEntry::Pointer &al)
 {
     // If we have already been called, return the cached value
     Auth::UserRequest::Pointer t = authTryGetUser(*aUR, conn, request);
@@ -464,28 +463,28 @@ void
 Auth::UserRequest::addReplyAuthHeader(HttpReply * rep, Auth::UserRequest::Pointer auth_user_request, HttpRequest * request, int accelerated, int internal)
 /* send the auth types we are configured to support (and have compiled in!) */
 {
-    Http::HdrType type;
+    http_hdr_type type;
 
     switch (rep->sline.status()) {
 
     case Http::scProxyAuthenticationRequired:
         /* Proxy authorisation needed */
-        type = Http::HdrType::PROXY_AUTHENTICATE;
+        type = HDR_PROXY_AUTHENTICATE;
         break;
 
     case Http::scUnauthorized:
         /* WWW Authorisation needed */
-        type = Http::HdrType::WWW_AUTHENTICATE;
+        type = HDR_WWW_AUTHENTICATE;
         break;
 
     default:
         /* Keep GCC happy */
         /* some other HTTP status */
-        type = Http::HdrType::BAD_HDR;
+        type = HDR_ENUM_END;
         break;
     }
 
-    debugs(29, 9, "headertype:" << type << " authuser:" << auth_user_request);
+    debugs(29, 9, HERE << "headertype:" << type << " authuser:" << auth_user_request);
 
     if (((rep->sline.status() == Http::scProxyAuthenticationRequired)
             || (rep->sline.status() == Http::scUnauthorized)) && internal)
@@ -534,7 +533,7 @@ authenticateFixHeader(HttpReply * rep, Auth::UserRequest::Pointer auth_user_requ
 /* call the active auth module and allow it to add a trailer to the request */
 // TODO remove wrapper
 void
-authenticateAddTrailer(HttpReply * rep, Auth::UserRequest::Pointer auth_user_request, HttpRequest *, int accelerated)
+authenticateAddTrailer(HttpReply * rep, Auth::UserRequest::Pointer auth_user_request, HttpRequest * request, int accelerated)
 {
     if (auth_user_request != NULL)
         auth_user_request->addAuthenticationInfoTrailer(rep, accelerated);

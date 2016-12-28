@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -15,17 +15,19 @@
 #include "DelayConfig.h"
 #include "helper/ChildConfig.h"
 #include "HttpHeaderTools.h"
+#include "icmp/IcmpConfig.h"
 #include "ip/Address.h"
 #include "Notes.h"
-#include "security/forward.h"
-#include "SquidTime.h"
 #if USE_OPENSSL
 #include "ssl/support.h"
 #endif
-#include "store/forward.h"
 #include "YesNoNone.h"
 
 #if USE_OPENSSL
+#if HAVE_OPENSSL_SSL_H
+#include <openssl/ssl.h>
+#endif
+
 class sslproxy_cert_sign;
 class sslproxy_cert_adapt;
 #endif
@@ -34,29 +36,17 @@ namespace Mgr
 {
 class ActionPasswordList;
 } // namespace Mgr
-class CachePeer;
 class CustomLog;
 class CpuAffinityMap;
 class external_acl;
 class HeaderManglers;
 class RefreshPattern;
 class RemovalPolicySettings;
+class SwapDir;
 
 namespace AnyP
 {
 class PortCfg;
-}
-
-namespace Store {
-class DiskConfig {
-public:
-    RefCount<SwapDir> *swapDirs;
-    int n_allocated;
-    int n_configured;
-    /// number of disk processes required to support all cache_dirs
-    int n_strands;
-};
-#define INDEXSD(i) (Config.cacheSwap.swapDirs[i].getRaw())
 }
 
 /// the representation of the configuration. POD.
@@ -102,17 +92,14 @@ public:
         time_t clientIdlePconn;
         time_t serverIdlePconn;
         time_t ftpClientIdle;
-        time_t pconnLifetime; ///< pconn_lifetime in squid.conf
         time_t siteSelect;
         time_t deadPeer;
-        time_t request_start_timeout;
         int icp_query;      /* msec */
         int icp_query_max;  /* msec */
         int icp_query_min;  /* msec */
         int mcast_icp_query;    /* msec */
         time_msec_t idns_retransmit;
         time_msec_t idns_query;
-        time_t urlRewrite;
     } Timeout;
     size_t maxRequestHeaderSize;
     int64_t maxRequestBodySize;
@@ -159,6 +146,10 @@ public:
         int rebuildwait;
         void *info;
     } Wccp2;
+#endif
+
+#if USE_ICMP
+    IcmpConfig pinger;
 #endif
 
     char *as_whois_server;
@@ -335,9 +326,6 @@ public:
         int hostStrictVerify;
         int client_dst_passthru;
         int dns_mdns;
-#if USE_OPENSSL
-        bool logTlsServerHelloDetails;
-#endif
     } onoff;
 
     int pipeline_max_prefetch;
@@ -369,7 +357,7 @@ public:
         acl_access *redirector;
         acl_access *store_id;
         acl_access *reply;
-        Acl::Address *outgoing_address;
+        AclAddress *outgoing_address;
 #if USE_HTCP
 
         acl_access *htcp;
@@ -389,11 +377,8 @@ public:
         /// spoof_client_ip squid.conf acl.
         /// nil unless configured
         acl_access* spoof_client_ip;
-        acl_access *on_unsupported_protocol;
 
         acl_access *ftp_epsv;
-
-        acl_access *forceRequestBodyContinuation;
     } accessList;
     AclDenyInfoList *denyInfoList;
 
@@ -410,7 +395,17 @@ public:
     } Ftp;
     RefreshPattern *Refresh;
 
-    Store::DiskConfig cacheSwap;
+    struct _cacheSwap {
+        RefCount<SwapDir> *swapDirs;
+        int n_allocated;
+        int n_configured;
+        /// number of disk processes required to support all cache_dirs
+        int n_strands;
+    } cacheSwap;
+    /*
+     * I'm sick of having to keep doing this ..
+     */
+#define INDEXSD(i)   (Config.cacheSwap.swapDirs[(i)].getRaw())
 
     struct {
         char *directory;
@@ -499,15 +494,26 @@ public:
     time_t minimum_expiry_time; /* seconds */
     external_acl *externalAclHelperList;
 
-    struct {
-        Security::ContextPtr sslContext;
 #if USE_OPENSSL
+
+    struct {
+        char *cert;
+        char *key;
+        int version;
+        char *options;
+        long parsedOptions;
+        char *cipher;
+        char *cafile;
+        char *capath;
+        char *crlfile;
+        char *flags;
         char *foreignIntermediateCertsPath;
         acl_access *cert_error;
+        SSL_CTX *sslContext;
         sslproxy_cert_sign *cert_sign;
         sslproxy_cert_adapt *cert_adapt;
-#endif
     } ssl_client;
+#endif
 
     char *accept_filter;
     int umask;
@@ -522,11 +528,6 @@ public:
     int client_ip_max_connections;
 
     char *redirector_extras;
-
-    struct UrlHelperTimeout {
-        int action;
-        char *response;
-    } onUrlRewriteTimeout;
 
     char *storeId_extras;
 

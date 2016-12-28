@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -233,7 +233,9 @@ cacheDestroy(Cache * cache)
     /* destroy the hash table itself */
     hashFreeMemory(hash);
 
-    delete cache->digest;
+    if (cache->digest)
+        cacheDigestDestroy(cache->digest);
+
     xfree(cache);
 }
 
@@ -249,10 +251,12 @@ cacheResetDigest(Cache * cache)
     assert(cache);
     fprintf(stderr, "%s: init-ing digest with %d entries\n", cache->name, cache->count);
 
+    if (cache->digest)
+        cacheDigestDestroy(cache->digest);
+
     hash = cache->hash;
 
-    delete cache->digest;
-    cache->digest = new CacheDigest(cache->count + 1, 6);
+    cache->digest = cacheDigestCreate(cache->count + 1, 6);
 
     if (!cache->count)
         return;
@@ -262,7 +266,7 @@ cacheResetDigest(Cache * cache)
     hash_first(hash);
 
     while ((e = (CacheEntry *)hash_next(hash))) {
-        cache->digest->add(e->key);
+        cacheDigestAdd(cache->digest, e->key);
     }
 
     gettimeofday(&t_end, NULL);
@@ -290,7 +294,7 @@ static void
 cacheQueryPeer(Cache * cache, const cache_key * key)
 {
     const int peer_has_it = hash_lookup(cache->peer->hash, key) != NULL;
-    const int we_think_we_have_it = cache->digest->test(key);
+    const int we_think_we_have_it = cacheDigestTest(cache->digest, key);
 
     ++ cache->qstats.query_count;
 
@@ -470,7 +474,7 @@ cachePurge(Cache * cache, storeSwapLogData * s, int update_digest)
         hash_remove_link(cache->hash, (hash_link *) olde);
 
         if (update_digest)
-            cache->digest->remove(s->key);
+            cacheDigestDel(cache->digest, s->key);
 
         cacheEntryDestroy(olde);
 
@@ -491,7 +495,7 @@ cacheStore(Cache * cache, storeSwapLogData * s, int update_digest)
         ++ cache->count;
 
         if (update_digest)
-            cache->digest->add(e->key);
+            cacheDigestAdd(cache->digest, e->key);
     }
 }
 
@@ -581,7 +585,7 @@ main(int argc, char *argv[])
     /* digest peer cache content */
     cacheResetDigest(them);
 
-    us->digest = them->digest->clone();
+    us->digest = cacheDigestClone(them->digest);    /* @netw@ */
 
     /* shift the time in access log to match ready_time */
     fileIteratorSetCurTime(fis[0], ready_time);

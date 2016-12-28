@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -9,7 +9,6 @@
 #ifndef STATCOUNTERS_H_
 #define STATCOUNTERS_H_
 
-#include "base/ByteCounter.h"
 #include "StatHist.h"
 
 #if USE_CACHE_DIGESTS
@@ -40,9 +39,9 @@ public:
         int mem_hits;
         int disk_hits;
         int errors;
-        ByteCounter kbytes_in;
-        ByteCounter kbytes_out;
-        ByteCounter hit_kbytes_out;
+        kb_t kbytes_in;
+        kb_t kbytes_out;
+        kb_t hit_kbytes_out;
         StatHist missSvcTime;
         StatHist nearMissSvcTime;
         StatHist nearHitSvcTime;
@@ -55,8 +54,8 @@ public:
         struct {
             int requests;
             int errors;
-            ByteCounter kbytes_in;
-            ByteCounter kbytes_out;
+            kb_t kbytes_in;
+            kb_t kbytes_out;
         } all , http, ftp, other;
     } server;
 
@@ -71,12 +70,12 @@ public:
         int hits_recv;
         int replies_queued;
         int replies_dropped;
-        ByteCounter kbytes_sent;
-        ByteCounter q_kbytes_sent;
-        ByteCounter r_kbytes_sent;
-        ByteCounter kbytes_recv;
-        ByteCounter q_kbytes_recv;
-        ByteCounter r_kbytes_recv;
+        kb_t kbytes_sent;
+        kb_t q_kbytes_sent;
+        kb_t r_kbytes_sent;
+        kb_t kbytes_recv;
+        kb_t q_kbytes_recv;
+        kb_t r_kbytes_recv;
         StatHist querySvcTime;
         StatHist replySvcTime;
         int query_timeouts;
@@ -98,9 +97,9 @@ public:
 
     struct {
         int times_used;
-        ByteCounter kbytes_sent;
-        ByteCounter kbytes_recv;
-        ByteCounter memory;
+        kb_t kbytes_sent;
+        kb_t kbytes_recv;
+        kb_t memory;
         int msgs_sent;
         int msgs_recv;
 #if USE_CACHE_DIGESTS

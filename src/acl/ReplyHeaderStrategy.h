@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -17,7 +17,7 @@ class ACLChecklist;
 #include "acl/Strategy.h"
 #include "HttpReply.h"
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 class ACLReplyHeaderStrategy : public ACLStrategy<char const *>
 {
 
@@ -38,7 +38,7 @@ private:
     ACLReplyHeaderStrategy&operator=(ACLReplyHeaderStrategy const &);
 };
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 int
 ACLReplyHeaderStrategy<header>::match (ACLData<char const *> * &data, ACLFilledChecklist *checklist, ACLFlags &)
 {
@@ -50,7 +50,7 @@ ACLReplyHeaderStrategy<header>::match (ACLData<char const *> * &data, ACLFilledC
     return data->match(theHeader);
 }
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 ACLReplyHeaderStrategy<header> *
 ACLReplyHeaderStrategy<header>::Instance()
 {
@@ -60,7 +60,7 @@ ACLReplyHeaderStrategy<header>::Instance()
     return Instance_;
 }
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 ACLReplyHeaderStrategy<header> * ACLReplyHeaderStrategy<header>::Instance_ = NULL;
 
 #endif /* SQUID_REPLYHEADERSTRATEGY_H */

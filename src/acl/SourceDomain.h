@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,7 +12,6 @@
 #include "acl/Checklist.h"
 #include "acl/Data.h"
 #include "acl/Strategised.h"
-#include "dns/forward.h"
 
 class ACLSourceDomainStrategy : public ACLStrategy<char const *>
 {
@@ -41,7 +40,7 @@ public:
 
 private:
     static SourceDomainLookup instance_;
-    static void LookupDone(const char *, const Dns::LookupDetails &, void *);
+    static void LookupDone(const char *, const DnsLookupDetails &, void *);
 };
 
 class ACLSourceDomain

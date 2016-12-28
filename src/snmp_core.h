@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,14 +13,17 @@
 
 #include "cache_snmp.h"
 #include "comm/forward.h"
-#include "ip/forward.h"
+#include "typedefs.h"
 
+namespace Ip
+{
+class Address;
+}
 class MemBuf;
 
 #define SNMP_REQUEST_SIZE 4096
 #define MAX_PROTOSTAT 5
 
-typedef variable_list *(oid_ParseFn) (variable_list *, snint *);
 typedef struct _mib_tree_entry mib_tree_entry;
 typedef oid *(instance_Fn) (oid * name, snint * len, mib_tree_entry * current, oid_ParseFn ** Fn);
 typedef enum {atNone = 0, atSum, atAverage, atMax, atMin} AggrType;

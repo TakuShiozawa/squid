@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,11 +13,11 @@
 #include "squid.h"
 #include "cache_cf.h"
 #include "ConfigOption.h"
+#include "disk.h"
 #include "DiskIO/DiskIOModule.h"
 #include "DiskIO/DiskIOStrategy.h"
 #include "fde.h"
 #include "FileMap.h"
-#include "fs_io.h"
 #include "globals.h"
 #include "Parsing.h"
 #include "RebuildState.h"
@@ -33,7 +33,6 @@
 
 #include <cerrno>
 #include <cmath>
-#include <random>
 #if HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -88,7 +87,7 @@ UFSCleanLog::write(StoreEntry const &e)
     s.timestamp = e.timestamp;
     s.lastref = e.lastref;
     s.expires = e.expires;
-    s.lastmod = e.lastmod;
+    s.lastmod = e.lastModified();
     s.swap_file_sz = e.swap_file_sz;
     s.refcount = e.refcount;
     s.flags = e.flags;
@@ -135,6 +134,7 @@ FreeObject(void *address)
     delete anObject;
 }
 
+static QS rev_int_sort;
 static int
 rev_int_sort(const void *A, const void *B)
 {
@@ -293,7 +293,7 @@ Fs::Ufs::UFSSwapDir::init()
         started_clean_event = 1;
     }
 
-    (void) fsBlockSize(path, &fs.blksize);
+    (void) storeDirGetBlkSize(path, &fs.blksize);
 }
 
 void
@@ -316,7 +316,8 @@ Fs::Ufs::UFSSwapDir::UFSSwapDir(char const *aType, const char *anIOType) :
     currentIOOptions(new ConfigOptionVector()),
     ioType(xstrdup(anIOType)),
     cur_size(0),
-    n_disk_objects(0)
+    n_disk_objects(0),
+    rebuilding_(false)
 {
     /* modulename is only set to disk modules that are built, by configure,
      * so the Find call should never return NULL here.
@@ -383,7 +384,7 @@ Fs::Ufs::UFSSwapDir::statfs(StoreEntry & sentry) const
     storeAppendPrintf(&sentry, "Filemap bits in use: %d of %d (%d%%)\n",
                       map->numFilesInMap(), map->capacity(),
                       Math::intPercent(map->numFilesInMap(), map->capacity()));
-    x = fsStats(path, &totl_kb, &free_kb, &totl_in, &free_in);
+    x = storeDirGetUFSStats(path, &totl_kb, &free_kb, &totl_in, &free_in);
 
     if (0 == x) {
         storeAppendPrintf(&sentry, "Filesystem Space in use: %d/%d KB (%d%%)\n",
@@ -530,7 +531,7 @@ Fs::Ufs::UFSSwapDir::reference(StoreEntry &e)
 }
 
 bool
-Fs::Ufs::UFSSwapDir::dereference(StoreEntry & e)
+Fs::Ufs::UFSSwapDir::dereference(StoreEntry & e, bool)
 {
     debugs(47, 3, HERE << "dereferencing " << &e << " " <<
            e.swap_dirn << "/" << e.swap_filen);
@@ -723,6 +724,15 @@ Fs::Ufs::UFSSwapDir::logFile(char const *ext) const
 void
 Fs::Ufs::UFSSwapDir::openLog()
 {
+    assert(NumberOfUFSDirs || !UFSDirToGlobalDirMapping);
+    ++NumberOfUFSDirs;
+    assert(NumberOfUFSDirs <= Config.cacheSwap.n_configured);
+
+    if (rebuilding_) { // we did not close the temporary log used for rebuilding
+        assert(swaplog_fd >= 0);
+        return;
+    }
+
     char *logPath;
     logPath = logFile();
     swaplog_fd = file_open(logPath, O_WRONLY | O_CREAT | O_BINARY);
@@ -733,13 +743,6 @@ Fs::Ufs::UFSSwapDir::openLog()
     }
 
     debugs(50, 3, HERE << "Cache Dir #" << index << " log opened on FD " << swaplog_fd);
-
-    if (0 == NumberOfUFSDirs)
-        assert(NULL == UFSDirToGlobalDirMapping);
-
-    ++NumberOfUFSDirs;
-
-    assert(NumberOfUFSDirs <= Config.cacheSwap.n_configured);
 }
 
 void
@@ -748,18 +751,19 @@ Fs::Ufs::UFSSwapDir::closeLog()
     if (swaplog_fd < 0) /* not open */
         return;
 
+    --NumberOfUFSDirs;
+    assert(NumberOfUFSDirs >= 0);
+    if (!NumberOfUFSDirs)
+        safe_free(UFSDirToGlobalDirMapping);
+
+    if (rebuilding_) // we cannot close the temporary log used for rebuilding
+        return;
+
     file_close(swaplog_fd);
 
     debugs(47, 3, "Cache Dir #" << index << " log closed on FD " << swaplog_fd);
 
     swaplog_fd = -1;
-
-    --NumberOfUFSDirs;
-
-    assert(NumberOfUFSDirs >= 0);
-
-    if (0 == NumberOfUFSDirs)
-        safe_free(UFSDirToGlobalDirMapping);
 }
 
 bool
@@ -784,7 +788,7 @@ Fs::Ufs::UFSSwapDir::addDiskRestore(const cache_key * key,
                                     time_t lastmod,
                                     uint32_t refcount,
                                     uint16_t newFlags,
-                                    int)
+                                    int clean)
 {
     StoreEntry *e = NULL;
     debugs(47, 5, HERE << storeKeyText(key)  <<
@@ -801,7 +805,7 @@ Fs::Ufs::UFSSwapDir::addDiskRestore(const cache_key * key,
     e->lastref = lastref;
     e->timestamp = timestamp;
     e->expires = expires;
-    e->lastmod = lastmod;
+    e->lastModified(lastmod);
     e->refcount = refcount;
     e->flags = newFlags;
     EBIT_CLR(e->flags, RELEASE_REQUEST);
@@ -839,6 +843,9 @@ Fs::Ufs::UFSSwapDir::rebuild()
 void
 Fs::Ufs::UFSSwapDir::closeTmpSwapLog()
 {
+    assert(rebuilding_);
+    rebuilding_ = false;
+
     char *swaplog_path = xstrdup(logFile(NULL)); // where the swaplog should be
     char *tmp_path = xstrdup(logFile(".new")); // the temporary file we have generated
     int fd;
@@ -864,6 +871,8 @@ Fs::Ufs::UFSSwapDir::closeTmpSwapLog()
 FILE *
 Fs::Ufs::UFSSwapDir::openTmpSwapLog(int *clean_flag, int *zero_flag)
 {
+    assert(!rebuilding_);
+
     char *swaplog_path = xstrdup(logFile(NULL));
     char *clean_path = xstrdup(logFile(".last-clean"));
     char *new_path = xstrdup(logFile(".new"));
@@ -897,6 +906,7 @@ Fs::Ufs::UFSSwapDir::openTmpSwapLog(int *clean_flag, int *zero_flag)
     }
 
     swaplog_fd = fd;
+    rebuilding_ = true;
 
     {
         const StoreSwapLogHeader header;
@@ -1053,18 +1063,17 @@ Fs::Ufs::UFSSwapDir::writeCleanDone()
     cleanLog = NULL;
 }
 
-void
-Fs::Ufs::UFSSwapDir::CleanEvent(void *)
+/// safely cleans a few unused files if possible
+int
+Fs::Ufs::UFSSwapDir::HandleCleanEvent()
 {
     static int swap_index = 0;
     int i;
     int j = 0;
     int n = 0;
-    /*
-     * Assert that there are UFS cache_dirs configured, otherwise
-     * we should never be called.
-     */
-    assert(NumberOfUFSDirs);
+
+    if (!NumberOfUFSDirs)
+        return 0; // probably in the middle of reconfiguration
 
     if (NULL == UFSDirToGlobalDirMapping) {
         SwapDir *sd;
@@ -1097,9 +1106,7 @@ Fs::Ufs::UFSSwapDir::CleanEvent(void *)
          * value.  j equals the total number of UFS level 2
          * swap directories
          */
-        std::mt19937 mt(static_cast<uint32_t>(getCurrentTime() & 0xFFFFFFFF));
-        xuniform_int_distribution<> dist(0, j);
-        swap_index = dist(mt);
+        swap_index = (int) (squid_random() % j);
     }
 
     /* if the rebuild is finished, start cleaning directories. */
@@ -1108,6 +1115,13 @@ Fs::Ufs::UFSSwapDir::CleanEvent(void *)
         ++swap_index;
     }
 
+    return n;
+}
+
+void
+Fs::Ufs::UFSSwapDir::CleanEvent(void *)
+{
+    const int n = HandleCleanEvent();
     eventAdd("storeDirClean", CleanEvent, NULL,
              15.0 * exp(-0.25 * n), 1);
 }
@@ -1200,9 +1214,6 @@ Fs::Ufs::UFSSwapDir::unlink(StoreEntry & e)
     replacementRemove(&e);
     mapBitReset(e.swap_filen);
     UFSSwapDir::unlinkFile(e.swap_filen);
-    e.swap_filen = -1;
-    e.swap_dirn = -1;
-    e.swap_status = SWAPOUT_NONE;
 }
 
 void
@@ -1215,10 +1226,12 @@ Fs::Ufs::UFSSwapDir::replacementAdd(StoreEntry * e)
 void
 Fs::Ufs::UFSSwapDir::replacementRemove(StoreEntry * e)
 {
+    StorePointer SD;
+
     if (e->swap_dirn < 0)
         return;
 
-    SwapDirPointer SD = INDEXSD(e->swap_dirn);
+    SD = INDEXSD(e->swap_dirn);
 
     assert (dynamic_cast<UFSSwapDir *>(SD.getRaw()) == this);
 
@@ -1274,16 +1287,30 @@ Fs::Ufs::UFSSwapDir::swappedOut(const StoreEntry &e)
     ++n_disk_objects;
 }
 
+StoreSearch *
+Fs::Ufs::UFSSwapDir::search(String const url, HttpRequest *request)
+{
+    if (url.size())
+        fatal ("Cannot search by url yet\n");
+
+    return new Fs::Ufs::StoreSearchUFS (this);
+}
+
 void
 Fs::Ufs::UFSSwapDir::logEntry(const StoreEntry & e, int op) const
 {
+    if (swaplog_fd < 0) {
+        debugs(36, 5, "cannot log " << e << " in the middle of reconfiguration");
+        return;
+    }
+
     StoreSwapLogData *s = new StoreSwapLogData;
     s->op = (char) op;
     s->swap_filen = e.swap_filen;
     s->timestamp = e.timestamp;
     s->lastref = e.lastref;
     s->expires = e.expires;
-    s->lastmod = e.lastmod;
+    s->lastmod = e.lastModified();
     s->swap_file_sz = e.swap_file_sz;
     s->refcount = e.refcount;
     s->flags = e.flags;

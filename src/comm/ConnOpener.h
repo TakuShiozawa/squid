@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -24,8 +24,6 @@ namespace Comm
  */
 class ConnOpener : public AsyncJob
 {
-    CBDATA_CLASS(ConnOpener);
-
 protected:
     virtual void start();
     virtual void swanSong();
@@ -87,6 +85,8 @@ private:
         /// [that we can cancel], but it will probably become one eventually.
         bool sleep_;
     } calls_;
+
+    CBDATA_CLASS2(ConnOpener);
 };
 
 }; // namespace Comm

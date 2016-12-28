@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -69,8 +69,19 @@ Adaptation::ServiceConfig::parse()
 {
     key = ConfigParser::NextToken();
     String method_point = ConfigParser::NextToken();
+    if (!method_point.size()) {
+        debugs(3, DBG_CRITICAL, "ERROR: " << cfg_filename << ':' << config_lineno << ": " <<
+               "Missing vectoring point in adaptation service definition");
+        return false;
+    }
+
     method = parseMethod(method_point.termedBuf());
     point = parseVectPoint(method_point.termedBuf());
+    if (method == Adaptation::methodNone && point == Adaptation::pointNone) {
+        debugs(3, DBG_CRITICAL, "ERROR: " << cfg_filename << ':' << config_lineno << ": " <<
+               "Unknown vectoring point '" << method_point << "' in adaptation service definition");
+        return false;
+    }
 
     // reset optional parameters in case we are reconfiguring
     bypass = routing = false;
@@ -105,7 +116,7 @@ Adaptation::ServiceConfig::parse()
 
         // Check if option is set twice
         if (options.find(name) != options.end()) {
-            debugs(3, DBG_CRITICAL, cfg_filename << ':' << config_lineno << ": " <<
+            debugs(3, DBG_CRITICAL, "ERROR: " << cfg_filename << ':' << config_lineno << ": " <<
                    "Duplicate option \"" << name << "\" in adaptation service definition");
             return false;
         }
@@ -127,17 +138,6 @@ Adaptation::ServiceConfig::parse()
         else if (strcmp(name, "on-overload") == 0) {
             grokked = grokOnOverload(onOverload, value);
             onOverloadSet = true;
-        } else if (strncmp(name, "ssl", 3) == 0 || strncmp(name, "tls-", 4) == 0) {
-#if !USE_OPENSSL
-            debugs(3, DBG_PARSE_NOTE(DBG_IMPORTANT), "WARNING: adaptation option '" << name << "' requires --with-openssl. ICAP service option ignored.");
-#else
-            // name prefix is "ssl" or "tls-"
-            std::string tmp = name + (name[0] == 's' ? 3 : 4);
-            tmp += "=";
-            tmp += value;
-            secure.parse(tmp.c_str());
-            grokked = true;
-#endif
         } else
             grokked = grokExtension(name, value);
 
@@ -149,14 +149,9 @@ Adaptation::ServiceConfig::parse()
     if (!onOverloadSet)
         onOverload = bypass ? srvBypass : srvWait;
 
-    // disable the TLS NPN extension if encrypted.
-    // Squid advertises "http/1.1", which is wrong for ICAPS.
-    if (secure.encryptTransport)
-        secure.parse("no-npn");
-
     // is the service URI set?
     if (!grokkedUri) {
-        debugs(3, DBG_CRITICAL, cfg_filename << ':' << config_lineno << ": " <<
+        debugs(3, DBG_CRITICAL, "ERROR: " << cfg_filename << ':' << config_lineno << ": " <<
                "No \"uri\" option in adaptation service definition");
         return false;
     }
@@ -230,10 +225,6 @@ Adaptation::ServiceConfig::grokUri(const char *value)
     }
 
     host.limitInit(s, len);
-#if USE_OPENSSL
-    if (secure.sslDomain.isEmpty())
-        secure.sslDomain.assign(host.rawBuf(), host.size());
-#endif
     s = e;
 
     port = -1;

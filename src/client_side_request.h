@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -35,7 +35,6 @@ class ClientHttpRequest
       public BodyConsumer     // to receive reply bodies in request satisf. mode
 #endif
 {
-    CBDATA_CLASS(ClientHttpRequest);
 
 public:
     ClientHttpRequest(ConnStateData *csd);
@@ -72,11 +71,9 @@ public:
     char *log_uri;
     String store_id; /* StoreID for transactions where the request member is nil */
 
-    struct Out {
-        Out() : offset(0), size(0), headers_sz(0) {}
-
+    struct {
         int64_t offset;
-        uint64_t size;
+        int64_t size;
         size_t headers_sz;
     } out;
 
@@ -89,18 +86,16 @@ public:
 
     AccessLogEntry::Pointer al; ///< access.log entry
 
-    struct Flags {
-        Flags() : accel(false), internal(false), done_copying(false), purging(false) {}
-
+    struct {
         bool accel;
+        //bool intercepted; //XXX: it's apparently never used.
+        //bool spoof_client_ip; //XXX: it's apparently never used.
         bool internal;
         bool done_copying;
         bool purging;
     } flags;
 
-    struct Redirect {
-        Redirect() : status(Http::scNone), location(NULL) {}
-
+    struct {
         Http::StatusCode status;
         char *location;
     } redirect;
@@ -111,9 +106,6 @@ public:
 
     ClientRequestContext *calloutContext;
     void doCallouts();
-
-    /// Build an error reply. For use with the callouts.
-    void calloutsError(const err_type error, const int errDetail);
 
 #if USE_ADAPTATION
     // AsyncJob virtual methods
@@ -148,12 +140,12 @@ public:
 
 public:
     void startAdaptation(const Adaptation::ServiceGroupPointer &g);
+    bool requestSatisfactionMode() const { return request_satisfaction_mode; }
 
-private:
-    /// Handles an adaptation client request failure.
-    /// Bypasses the error if possible, or build an error reply.
+    // private but exposed for ClientRequestContext
     void handleAdaptationFailure(int errDetail, bool bypassable = false);
 
+private:
     // Adaptation::Initiator API
     virtual void noteAdaptationAnswer(const Adaptation::Answer &answer);
     void handleAdaptedHeader(HttpMsg *msg);
@@ -176,6 +168,9 @@ private:
     bool request_satisfaction_mode;
     int64_t request_satisfaction_offset;
 #endif
+
+private:
+    CBDATA_CLASS2(ClientHttpRequest);
 };
 
 /* client http based routines */
@@ -186,7 +181,7 @@ int clientHttpRequestStatus(int fd, ClientHttpRequest const *http);
 void clientAccessCheck(ClientHttpRequest *);
 
 /* ones that should be elsewhere */
-void tunnelStart(ClientHttpRequest *);
+void tunnelStart(ClientHttpRequest *, int64_t *, int *, const AccessLogEntry::Pointer &al);
 
 #if _USE_INLINE_
 #include "client_side_request.cci"

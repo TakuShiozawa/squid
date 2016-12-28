@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -46,16 +46,16 @@
 #define HELPER_INPUT_BUFFER 8196
 
 /* send OK result to Squid with a string parameter. */
-#define SEND_OK(x)  std::cout << "OK " << x << std::endl
+#define SEND_OK(x)  fprintf(stdout, "OK %s\n",x)
 
 /* send ERR result to Squid with a string parameter. */
-#define SEND_ERR(x) std::cout << "ERR " << x << std::endl
+#define SEND_ERR(x) fprintf(stdout, "ERR %s\n",x)
 
 /* send ERR result to Squid with a string parameter. */
-#define SEND_BH(x)  std::cout << "BH " << x << std::endl
+#define SEND_BH(x)  fprintf(stdout, "BH %s\n",x)
 
 /* send TT result to Squid with a string parameter. */
-#define SEND_TT(x)  std::cout << "TT " << x << std::endl
+#define SEND_TT(x)  fprintf(stdout, "TT %s\n",x)
 
 #endif /* __SQUID_HELPERS_DEFINES_H */
 

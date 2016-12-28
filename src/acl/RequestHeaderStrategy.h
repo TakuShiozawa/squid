@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -14,7 +14,8 @@
 #include "acl/Strategy.h"
 #include "HttpRequest.h"
 
-template <Http::HdrType header>
+template <http_hdr_type header>
+
 class ACLRequestHeaderStrategy : public ACLStrategy<char const *>
 {
 
@@ -35,7 +36,7 @@ private:
     ACLRequestHeaderStrategy&operator=(ACLRequestHeaderStrategy const &);
 };
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 int
 ACLRequestHeaderStrategy<header>::match (ACLData<char const *> * &data, ACLFilledChecklist *checklist, ACLFlags &)
 {
@@ -47,7 +48,7 @@ ACLRequestHeaderStrategy<header>::match (ACLData<char const *> * &data, ACLFille
     return data->match(theHeader);
 }
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 ACLRequestHeaderStrategy<header> *
 ACLRequestHeaderStrategy<header>::Instance()
 {
@@ -57,7 +58,7 @@ ACLRequestHeaderStrategy<header>::Instance()
     return Instance_;
 }
 
-template <Http::HdrType header>
+template <http_hdr_type header>
 ACLRequestHeaderStrategy<header> * ACLRequestHeaderStrategy<header>::Instance_ = NULL;
 
 #endif /* SQUID_REQUESTHEADERSTRATEGY_H */

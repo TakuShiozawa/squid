@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -25,6 +25,9 @@
 #define IPFILTER_VERSION        5000004
 #endif
 
+#if HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
 #if HAVE_SYS_IOCCOM_H
 #include <sys/ioccom.h>
 #endif
@@ -156,7 +159,7 @@ Ip::Intercept::NetfilterInterception(const Comm::ConnectionPointer &newConn, int
 }
 
 bool
-Ip::Intercept::TproxyTransparent(const Comm::ConnectionPointer &newConn, int)
+Ip::Intercept::TproxyTransparent(const Comm::ConnectionPointer &newConn, int silent)
 {
 #if (LINUX_NETFILTER && defined(IP_TRANSPARENT)) || \
     (PF_TRANSPARENT && defined(SO_BINDANY)) || \
@@ -174,7 +177,7 @@ Ip::Intercept::TproxyTransparent(const Comm::ConnectionPointer &newConn, int)
 }
 
 bool
-Ip::Intercept::IpfwInterception(const Comm::ConnectionPointer &newConn, int)
+Ip::Intercept::IpfwInterception(const Comm::ConnectionPointer &newConn, int silent)
 {
 #if IPFW_TRANSPARENT
     /* The getsockname() call performed already provided the TCP packet details.
@@ -205,18 +208,24 @@ Ip::Intercept::IpfInterception(const Comm::ConnectionPointer &newConn, int silen
         // warn once every 10 at critical level, then push down a level each repeated event
         static int warningLevel = DBG_CRITICAL;
         debugs(89, warningLevel, "IPF (IPFilter v4) NAT does not support IPv6. Please upgrade to IPFilter v5.1");
-        warningLevel = ++warningLevel % 10;
+        warningLevel = (warningLevel + 1) % 10;
         return false;
+    }
+    newConn->local.getInAddr(natLookup.nl_inip);
+    newConn->remote.getInAddr(natLookup.nl_outip);
 #else
         natLookup.nl_v = 6;
-    } else {
-        natLookup.nl_v = 4;
-#endif
+        newConn->local.getInAddr(natLookup.nl_inipaddr.in6);
+        newConn->remote.getInAddr(natLookup.nl_outipaddr.in6);
     }
+    else {
+        natLookup.nl_v = 4;
+        newConn->local.getInAddr(natLookup.nl_inipaddr.in4);
+        newConn->remote.getInAddr(natLookup.nl_outipaddr.in4);
+    }
+#endif
     natLookup.nl_inport = htons(newConn->local.port());
-    newConn->local.getInAddr(natLookup.nl_inip);
     natLookup.nl_outport = htons(newConn->remote.port());
-    newConn->remote.getInAddr(natLookup.nl_outip);
     // ... and the TCP flag
     natLookup.nl_flags = IPN_TCP;
 
@@ -281,7 +290,14 @@ Ip::Intercept::IpfInterception(const Comm::ConnectionPointer &newConn, int silen
         debugs(89, 9, HERE << "address: " << newConn);
         return false;
     } else {
+#if IPFILTER_VERSION < 5000003
         newConn->local = natLookup.nl_realip;
+#else
+        if (newConn->remote.isIPv6())
+            newConn->local = natLookup.nl_realipaddr.in6;
+        else
+            newConn->local = natLookup.nl_realipaddr.in4;
+#endif
         newConn->local.port(ntohs(natLookup.nl_realport));
         debugs(89, 5, HERE << "address NAT: " << newConn);
         return true;
@@ -323,13 +339,20 @@ Ip::Intercept::PfInterception(const Comm::ConnectionPointer &newConn, int silent
     }
 
     memset(&nl, 0, sizeof(struct pfioc_natlook));
-    newConn->remote.getInAddr(nl.saddr.v4);
-    nl.sport = htons(newConn->remote.port());
 
-    newConn->local.getInAddr(nl.daddr.v4);
+    if (newConn->remote.isIPv6()) {
+        newConn->remote.getInAddr(nl.saddr.v6);
+        newConn->local.getInAddr(nl.daddr.v6);
+        nl.af = AF_INET6;
+    } else {
+        newConn->remote.getInAddr(nl.saddr.v4);
+        newConn->local.getInAddr(nl.daddr.v4);
+        nl.af = AF_INET;
+    }
+
+    nl.sport = htons(newConn->remote.port());
     nl.dport = htons(newConn->local.port());
 
-    nl.af = AF_INET;
     nl.proto = IPPROTO_TCP;
     nl.direction = PF_OUT;
 
@@ -345,7 +368,10 @@ Ip::Intercept::PfInterception(const Comm::ConnectionPointer &newConn, int silent
         debugs(89, 9, HERE << "address: " << newConn);
         return false;
     } else {
-        newConn->local = nl.rdaddr.v4;
+        if (newConn->remote.isIPv6())
+            newConn->local = nl.rdaddr.v6;
+        else
+            newConn->local = nl.rdaddr.v4;
         newConn->local.port(ntohs(nl.rdport));
         debugs(89, 5, HERE << "address NAT: " << newConn);
         return true;

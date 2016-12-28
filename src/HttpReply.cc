@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,7 +11,6 @@
 #include "squid.h"
 #include "acl/AclSizeLimit.h"
 #include "acl/FilledChecklist.h"
-#include "base/EnumIterator.h"
 #include "globals.h"
 #include "HttpBody.h"
 #include "HttpHdrCc.h"
@@ -24,39 +23,6 @@
 #include "SquidTime.h"
 #include "Store.h"
 #include "StrList.h"
-
-/* local constants */
-
-/* If we receive a 304 from the origin during a cache revalidation, we must
- * update the headers of the existing entry. Specifically, we need to update all
- * end-to-end headers and not any hop-by-hop headers (rfc2616 13.5.3).
- *
- * This is not the whole story though: since it is possible for a faulty/malicious
- * origin server to set headers it should not in a 304, we must explicitly ignore
- * these too. Specifically all entity-headers except those permitted in a 304
- * (rfc2616 10.3.5) must be ignored.
- *
- * The list of headers we don't update is made up of:
- *     all hop-by-hop headers
- *     all entity-headers except Expires and Content-Location
- *
- * These headers are now stored in RegisteredHeadersHash.gperf and accessible
- * as Http::HeaderLookupTable.lookup(id).denied304
- */
-static HttpHeaderMask Denied304HeadersMask;
-
-/* module initialization */
-void
-httpReplyInitModule(void)
-{
-    assert(Http::scNone == 0); // HttpReply::parse() interface assumes that
-    httpHeaderMaskInit(&Denied304HeadersMask, 0);
-
-    for (auto id : WholeEnum<Http::HdrType>()) {
-        if (Http::HeaderLookupTable.lookup(id).denied304)
-            CBIT_SET(Denied304HeadersMask, id);
-    }
-}
 
 HttpReply::HttpReply() : HttpMsg(hoReply), date (0), last_modified (0),
     expires (0), surrogate_control (NULL), content_range (NULL), keep_alive (0),
@@ -108,15 +74,15 @@ HttpReply::clean()
 }
 
 void
-HttpReply::packHeadersInto(Packable * p) const
+HttpReply::packHeadersInto(Packer * p) const
 {
     sline.packInto(p);
     header.packInto(p);
-    p->append("\r\n", 2);
+    packerAppend(p, "\r\n", 2);
 }
 
 void
-HttpReply::packInto(Packable * p)
+HttpReply::packInto(Packer * p)
 {
     packHeadersInto(p);
     body.packInto(p);
@@ -127,15 +93,19 @@ MemBuf *
 HttpReply::pack()
 {
     MemBuf *mb = new MemBuf;
+    Packer p;
+
     mb->init();
-    packInto(mb);
+    packerToMemInit(&p, mb);
+    packInto(&p);
+    packerClean(&p);
     return mb;
 }
 
 HttpReply *
 HttpReply::make304() const
 {
-    static const Http::HdrType ImsEntries[] = {Http::HdrType::DATE, Http::HdrType::CONTENT_TYPE, Http::HdrType::EXPIRES, Http::HdrType::LAST_MODIFIED, /* eof */ Http::HdrType::OTHER};
+    static const http_hdr_type ImsEntries[] = {HDR_DATE, HDR_CONTENT_TYPE, HDR_EXPIRES, HDR_LAST_MODIFIED, /* eof */ HDR_OTHER};
 
     HttpReply *rv = new HttpReply;
     int t;
@@ -146,15 +116,15 @@ HttpReply::make304() const
     rv->last_modified = last_modified;
     rv->expires = expires;
     rv->content_type = content_type;
-    /* rv->cache_control */
     /* rv->content_range */
     /* rv->keep_alive */
-    rv->sline.set(Http::ProtocolVersion(), Http::scNotModified, NULL);
+    rv->sline.set(Http::ProtocolVersion(1,1), Http::scNotModified, NULL);
 
-    for (t = 0; ImsEntries[t] != Http::HdrType::OTHER; ++t) {
+    for (t = 0; ImsEntries[t] != HDR_OTHER; ++t)
         if ((e = header.findEntry(ImsEntries[t])))
             rv->header.addEntry(e->clone());
-    }
+
+    rv->putCc(cache_control);
 
     /* rv->body */
     return rv;
@@ -177,26 +147,26 @@ HttpReply::setHeaders(Http::StatusCode status, const char *reason,
                       const char *ctype, int64_t clen, time_t lmt, time_t expiresTime)
 {
     HttpHeader *hdr;
-    sline.set(Http::ProtocolVersion(), status, reason);
+    sline.set(Http::ProtocolVersion(1,1), status, reason);
     hdr = &header;
-    hdr->putStr(Http::HdrType::SERVER, visible_appname_string);
-    hdr->putStr(Http::HdrType::MIME_VERSION, "1.0");
-    hdr->putTime(Http::HdrType::DATE, squid_curtime);
+    hdr->putStr(HDR_SERVER, visible_appname_string);
+    hdr->putStr(HDR_MIME_VERSION, "1.0");
+    hdr->putTime(HDR_DATE, squid_curtime);
 
     if (ctype) {
-        hdr->putStr(Http::HdrType::CONTENT_TYPE, ctype);
+        hdr->putStr(HDR_CONTENT_TYPE, ctype);
         content_type = ctype;
     } else
         content_type = String();
 
     if (clen >= 0)
-        hdr->putInt64(Http::HdrType::CONTENT_LENGTH, clen);
+        hdr->putInt64(HDR_CONTENT_LENGTH, clen);
 
     if (expiresTime >= 0)
-        hdr->putTime(Http::HdrType::EXPIRES, expiresTime);
+        hdr->putTime(HDR_EXPIRES, expiresTime);
 
     if (lmt > 0)        /* this used to be lmt != 0 @?@ */
-        hdr->putTime(Http::HdrType::LAST_MODIFIED, lmt);
+        hdr->putTime(HDR_LAST_MODIFIED, lmt);
 
     date = squid_curtime;
 
@@ -211,12 +181,12 @@ void
 HttpReply::redirect(Http::StatusCode status, const char *loc)
 {
     HttpHeader *hdr;
-    sline.set(Http::ProtocolVersion(), status, NULL);
+    sline.set(Http::ProtocolVersion(1,1), status, NULL);
     hdr = &header;
-    hdr->putStr(Http::HdrType::SERVER, APP_FULLNAME);
-    hdr->putTime(Http::HdrType::DATE, squid_curtime);
-    hdr->putInt64(Http::HdrType::CONTENT_LENGTH, 0);
-    hdr->putStr(Http::HdrType::LOCATION, loc);
+    hdr->putStr(HDR_SERVER, APP_FULLNAME);
+    hdr->putTime(HDR_DATE, squid_curtime);
+    hdr->putInt64(HDR_CONTENT_LENGTH, 0);
+    hdr->putStr(HDR_LOCATION, loc);
     date = squid_curtime;
     content_length = 0;
 }
@@ -240,9 +210,9 @@ HttpReply::validatorsMatch(HttpReply const * otherRep) const
         return 0;
 
     /* ETag */
-    one = header.getStrOrList(Http::HdrType::ETAG);
+    one = header.getStrOrList(HDR_ETAG);
 
-    two = otherRep->header.getStrOrList(Http::HdrType::ETAG);
+    two = otherRep->header.getStrOrList(HDR_ETAG);
 
     if (one.size()==0 || two.size()==0 || one.caseCmp(two)!=0 ) {
         one.clean();
@@ -254,9 +224,9 @@ HttpReply::validatorsMatch(HttpReply const * otherRep) const
         return 0;
 
     /* MD5 */
-    one = header.getStrOrList(Http::HdrType::CONTENT_MD5);
+    one = header.getStrOrList(HDR_CONTENT_MD5);
 
-    two = otherRep->header.getStrOrList(Http::HdrType::CONTENT_MD5);
+    two = otherRep->header.getStrOrList(HDR_CONTENT_MD5);
 
     if (one.size()==0 || two.size()==0 || one.caseCmp(two)!=0 ) {
         one.clean();
@@ -267,20 +237,23 @@ HttpReply::validatorsMatch(HttpReply const * otherRep) const
     return 1;
 }
 
-void
+bool
 HttpReply::updateOnNotModified(HttpReply const * freshRep)
 {
     assert(freshRep);
 
+    /* update raw headers */
+    if (!header.update(&freshRep->header))
+        return false;
+
     /* clean cache */
     hdrCacheClean();
-    /* update raw headers */
-    header.update(&freshRep->header,
-                  (const HttpHeaderMask *) &Denied304HeadersMask);
 
     header.compact();
     /* init cache */
     hdrCacheInit();
+
+    return true;
 }
 
 /* internal routines */
@@ -312,16 +285,16 @@ HttpReply::hdrExpirationTime()
     }
 
     if (Config.onoff.vary_ignore_expire &&
-            header.has(Http::HdrType::VARY)) {
-        const time_t d = header.getTime(Http::HdrType::DATE);
-        const time_t e = header.getTime(Http::HdrType::EXPIRES);
+            header.has(HDR_VARY)) {
+        const time_t d = header.getTime(HDR_DATE);
+        const time_t e = header.getTime(HDR_EXPIRES);
 
         if (d == e)
             return -1;
     }
 
-    if (header.has(Http::HdrType::EXPIRES)) {
-        const time_t e = header.getTime(Http::HdrType::EXPIRES);
+    if (header.has(HDR_EXPIRES)) {
+        const time_t e = header.getTime(HDR_EXPIRES);
         /*
          * HTTP/1.0 says that robust implementations should consider
          * bad or malformed Expires header as equivalent to "expires
@@ -340,13 +313,13 @@ HttpReply::hdrCacheInit()
     HttpMsg::hdrCacheInit();
 
     http_ver = sline.version;
-    content_length = header.getInt64(Http::HdrType::CONTENT_LENGTH);
-    date = header.getTime(Http::HdrType::DATE);
-    last_modified = header.getTime(Http::HdrType::LAST_MODIFIED);
+    content_length = header.getInt64(HDR_CONTENT_LENGTH);
+    date = header.getTime(HDR_DATE);
+    last_modified = header.getTime(HDR_LAST_MODIFIED);
     surrogate_control = header.getSc();
     content_range = header.getContRange();
     keep_alive = persistent() ? 1 : 0;
-    const char *str = header.getStr(Http::HdrType::CONTENT_TYPE);
+    const char *str = header.getStr(HDR_CONTENT_TYPE);
 
     if (str)
         content_type.limitInit(str, strcspn(str, ";\t "));
@@ -408,15 +381,15 @@ HttpReply::bodySize(const HttpRequestMethod& method) const
  * NP: not all error cases are detected yet. Some are left for detection later in parse.
  */
 bool
-HttpReply::sanityCheckStartLine(const char *buf, const size_t hdr_len, Http::StatusCode *error)
+HttpReply::sanityCheckStartLine(MemBuf *buf, const size_t hdr_len, Http::StatusCode *error)
 {
     // hack warning: using psize instead of size here due to type mismatches with MemBuf.
 
     // content is long enough to possibly hold a reply
     // 4 being magic size of a 3-digit number plus space delimiter
-    if (hdr_len < (size_t)(protoPrefix.psize() + 4)) {
+    if ( buf->contentSize() < (protoPrefix.psize() + 4) ) {
         if (hdr_len > 0) {
-            debugs(58, 3, "Too small reply header (" << hdr_len << " bytes)");
+            debugs(58, 3, HERE << "Too small reply header (" << hdr_len << " bytes)");
             *error = Http::scInvalidHeader;
         }
         return false;
@@ -425,13 +398,13 @@ HttpReply::sanityCheckStartLine(const char *buf, const size_t hdr_len, Http::Sta
     int pos;
     // catch missing or mismatched protocol identifier
     // allow special-case for ICY protocol (non-HTTP identifier) in response to faked HTTP request.
-    if (strncmp(buf, "ICY", 3) == 0) {
+    if (strncmp(buf->content(), "ICY", 3) == 0) {
         protoPrefix = "ICY";
         pos = protoPrefix.psize();
     } else {
 
-        if (protoPrefix.cmp(buf, protoPrefix.size()) != 0) {
-            debugs(58, 3, "missing protocol prefix (" << protoPrefix << ") in '" << buf << "'");
+        if (protoPrefix.cmp(buf->content(), protoPrefix.size()) != 0) {
+            debugs(58, 3, "HttpReply::sanityCheckStartLine: missing protocol prefix (" << protoPrefix << ") in '" << buf->content() << "'");
             *error = Http::scInvalidHeader;
             return false;
         }
@@ -440,21 +413,21 @@ HttpReply::sanityCheckStartLine(const char *buf, const size_t hdr_len, Http::Sta
         pos = protoPrefix.psize();
 
         // skip arbitrary number of digits and a dot in the verion portion
-        while ((size_t)pos <= hdr_len && (*(buf+pos) == '.' || xisdigit(*(buf+pos)) ) ) ++pos;
+        while ( pos <= buf->contentSize() && (*(buf->content()+pos) == '.' || xisdigit(*(buf->content()+pos)) ) ) ++pos;
 
         // catch missing version info
         if (pos == protoPrefix.psize()) {
-            debugs(58, 3, "missing protocol version numbers (ie. " << protoPrefix << "/1.0) in '" << buf << "'");
+            debugs(58, 3, "HttpReply::sanityCheckStartLine: missing protocol version numbers (ie. " << protoPrefix << "/1.0) in '" << buf->content() << "'");
             *error = Http::scInvalidHeader;
             return false;
         }
     }
 
     // skip arbitrary number of spaces...
-    while ((size_t)pos <= hdr_len && (char)*(buf+pos) == ' ') ++pos;
+    while (pos <= buf->contentSize() && (char)*(buf->content()+pos) == ' ') ++pos;
 
-    if ((size_t)pos < hdr_len && !xisdigit(*(buf+pos))) {
-        debugs(58, 3, "missing or invalid status number in '" << buf << "'");
+    if (pos < buf->contentSize() && !xisdigit(*(buf->content()+pos))) {
+        debugs(58, 3, "HttpReply::sanityCheckStartLine: missing or invalid status number in '" << buf->content() << "'");
         *error = Http::scInvalidHeader;
         return false;
     }
@@ -474,7 +447,7 @@ HttpReply::httpMsgParseError()
 {
     int result(HttpMsg::httpMsgParseError());
     /* indicate an error in the status line */
-    sline.set(Http::ProtocolVersion(), Http::scInvalidHeader);
+    sline.set(Http::ProtocolVersion(1,1), Http::scInvalidHeader);
     return result;
 }
 
@@ -594,14 +567,14 @@ bool HttpReply::inheritProperties(const HttpMsg *aMsg)
 void HttpReply::removeStaleWarnings()
 {
     String warning;
-    if (header.getList(Http::HdrType::WARNING, &warning)) {
+    if (header.getList(HDR_WARNING, &warning)) {
         const String newWarning = removeStaleWarningValues(warning);
         if (warning.size() && warning.size() == newWarning.size())
             return; // some warnings are there and none changed
-        header.delById(Http::HdrType::WARNING);
+        header.delById(HDR_WARNING);
         if (newWarning.size()) { // some warnings left
             HttpHeaderEntry *const e =
-                new HttpHeaderEntry(Http::HdrType::WARNING, NULL, newWarning.termedBuf());
+                new HttpHeaderEntry(HDR_WARNING, NULL, newWarning.termedBuf());
             header.addEntry(e);
         }
     }
@@ -653,5 +626,13 @@ String HttpReply::removeStaleWarningValues(const String &value)
     }
 
     return newValue;
+}
+
+bool
+HttpReply::olderThan(const HttpReply *them) const
+{
+    if (!them || !them->date || !date)
+        return false;
+    return date < them->date;
 }
 

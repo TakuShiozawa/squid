@@ -1,4 +1,4 @@
-## Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+## Copyright (C) 1996-2016 The Squid Software Foundation and contributors
 ##
 ## Squid software is distributed under GPLv2+ license and includes
 ## contributions from numerous individuals and organizations.
@@ -45,6 +45,9 @@ if test "x$enable_auth_basic" != "xno" ; then
 
       elif test "x$helper" = "xLDAP" ; then
         m4_include([helpers/basic_auth/LDAP/required.m4])
+
+      elif test "x$helper" = "xMSNT-multi-domain" ; then
+        m4_include([helpers/basic_auth/MSNT-multi-domain/required.m4])
 
       elif test "x$helper" = "xNCSA" ; then
         m4_include([helpers/basic_auth/NCSA/required.m4])

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -491,7 +491,7 @@ Ipc::StoreMapAnchor::set(const StoreEntry &from)
     basics.timestamp = from.timestamp;
     basics.lastref = from.lastref;
     basics.expires = from.expires;
-    basics.lastmod = from.lastmod;
+    basics.lastmod = from.lastModified();
     basics.swap_file_sz = from.swap_file_sz;
     basics.refcount = from.refcount;
     basics.flags = from.flags;

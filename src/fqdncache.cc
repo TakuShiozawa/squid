@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,18 +10,16 @@
 
 #include "squid.h"
 #include "cbdata.h"
-#include "dns/forward.h"
-#include "dns/LookupDetails.h"
-#include "dns/rfc1035.h"
+#include "DnsLookupDetails.h"
 #include "event.h"
-#include "fqdncache.h"
 #include "helper.h"
+#include "Mem.h"
 #include "mgr/Registration.h"
 #include "SquidConfig.h"
+#include "SquidDns.h"
 #include "SquidTime.h"
 #include "StatCounters.h"
 #include "Store.h"
-#include "util.h"
 #include "wordlist.h"
 
 #if SQUID_SNMP
@@ -205,7 +203,7 @@ fqdncacheExpiredEntry(const fqdncache_entry * f)
 
 /// \ingroup FQDNCacheAPI
 void
-fqdncache_purgelru(void *)
+fqdncache_purgelru(void *notused)
 {
     dlink_node *m;
     dlink_node *prev = NULL;
@@ -312,7 +310,7 @@ fqdncacheCallback(fqdncache_entry * f, int wait)
     f->handler = NULL;
 
     if (cbdataReferenceValidDone(f->handlerData, &cbdata)) {
-        const Dns::LookupDetails details(f->error_message, wait);
+        const DnsLookupDetails details(f->error_message, wait);
         callback(f->name_count ? f->names[0] : NULL, details, cbdata);
     }
 
@@ -429,7 +427,7 @@ fqdncache_nbgethostbyaddr(const Ip::Address &addr, FQDNH * handler, void *handle
 
     if (name[0] == '\0') {
         debugs(35, 4, "fqdncache_nbgethostbyaddr: Invalid name!");
-        const Dns::LookupDetails details("Invalid hostname", -1); // error, no lookup
+        const DnsLookupDetails details("Invalid hostname", -1); // error, no lookup
         if (handler)
             handler(NULL, details, handlerData);
         return;

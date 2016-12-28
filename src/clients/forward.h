@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,7 +11,6 @@
 
 class FwdState;
 class HttpRequest;
-class SBuf;
 
 class AsyncJob;
 template <class Cbc> class CbcPointer;
@@ -36,7 +35,7 @@ AsyncJobPointer StartRelay(FwdState *const fwdState);
  *
  * \todo Should be a URL class API call.
  */
-const SBuf &UrlWith2f(HttpRequest *);
+const char *UrlWith2f(HttpRequest *);
 
 } // namespace Ftp
 

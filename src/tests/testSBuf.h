@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -52,8 +52,6 @@ class testSBuf : public CPPUNIT_NS::TestFixture
     CPPUNIT_TEST( testSBufStream );
     CPPUNIT_TEST( testAutoFind );
     CPPUNIT_TEST( testStdStringOps );
-    CPPUNIT_TEST( testIterators );
-    CPPUNIT_TEST( testSBufHash );
 //    CPPUNIT_TEST( testDumpStats ); //fake test, to print alloc stats
     CPPUNIT_TEST_SUITE_END();
 protected:
@@ -93,8 +91,6 @@ protected:
     void testFindFirstNotOf();
     void testAutoFind();
     void testStdStringOps();
-    void testIterators();
-    void testSBufHash();
 };
 
 #endif

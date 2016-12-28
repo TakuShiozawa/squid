@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -49,7 +49,7 @@
 #include <sys/epoll.h>
 #endif
 
-static int kdpfd = -1;
+static int kdpfd;
 static int max_poll_time = 1000;
 
 static struct epoll_event *pevents;
@@ -109,13 +109,17 @@ Comm::SetSelect(int fd, unsigned int type, PF * handler, void *client_data, time
     fde *F = &fd_table[fd];
     int epoll_ctl_type = 0;
 
+    struct epoll_event ev;
     assert(fd >= 0);
     debugs(5, 5, HERE << "FD " << fd << ", type=" << type <<
            ", handler=" << handler << ", client_data=" << client_data <<
            ", timeout=" << timeout);
 
-    struct epoll_event ev;
-    memset(&ev, 0, sizeof(ev));
+    if (RUNNING_ON_VALGRIND) {
+        /* Keep valgrind happy.. complains about uninitialized bytes otherwise */
+        memset(&ev, 0, sizeof(ev));
+    }
+    ev.events = 0;
     ev.data.fd = fd;
 
     if (!F->flags.open) {

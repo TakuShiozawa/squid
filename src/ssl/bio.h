@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -52,18 +52,21 @@ public:
         int toSquidSSLVersion() const;
         /// Configure the SSL object with the SSL features of the sslFeatures object
         void applyToSSL(SSL *ssl, Ssl::BumpMode bumpMode) const;
-        /// Parses an SSL Message header. It returns the ssl Message size.
+        /// Parses an SSL Message header. It returns the Hello ssl Message size.
         /// \retval >0 if the hello size is retrieved
         /// \retval 0 if the contents of the buffer are not enough
         /// \retval <0 if the contents of buf are not SSLv3 or TLS hello message
         int parseMsgHead(const MemBuf &);
-        /// Parses msg buffer and return true if one of the Change Cipher Spec
+        /// Return a pointer to the SSL Record include the hello message
+        /// or NULL if this is not available
+        const unsigned char *helloRecord(const MemBuf &);
+        /// Parses buf buffer and return true if one of the Change Cipher Spec
         /// or New Session Ticket messages found
-        bool checkForCcsOrNst(const unsigned char *msg, size_t size);
+        bool checkForCcsOrNst(const MemBuf &buf);
     public:
-        int sslHelloVersion; ///< The SSL hello message version
         int sslVersion; ///< The requested/used SSL version
         int compressMethod; ///< The requested/used compressed  method
+        int helloRecordStart; ///< The SSL hello position in SSL
         int helloMsgSize; ///< the hello message size
         mutable SBuf serverName; ///< The SNI hostname, if any
         std::string clientRequestedCiphers; ///< The client requested ciphers
@@ -117,15 +120,10 @@ public:
     /// Reads data from socket and record them to a buffer
     int readAndBuffer(char *buf, int size, BIO *table, const char *description);
 
-    /// Return the TLS features requested by TLS client
-    const Bio::sslFeatures &receivedHelloFeatures() const {return receivedHelloFeatures_;}
-
     const MemBuf &rBufData() {return rbuf;}
 protected:
     const int fd_; ///< the SSL socket we are reading and writing
     MemBuf rbuf;  ///< Used to buffer input data.
-    /// The features retrieved from client or Server TLS hello message
-    Bio::sslFeatures receivedHelloFeatures_;
 };
 
 /// BIO node to handle socket IO for squid client side
@@ -136,7 +134,7 @@ class ClientBio: public Bio
 public:
     /// The ssl hello message read states
     typedef enum {atHelloNone = 0, atHelloStarted, atHelloReceived} HelloReadState;
-    explicit ClientBio(const int anFd): Bio(anFd), holdRead_(false), holdWrite_(false), helloState(atHelloNone), helloSize(0), wrongProtocol(false) {}
+    explicit ClientBio(const int anFd): Bio(anFd), holdRead_(false), holdWrite_(false), helloState(atHelloNone) {}
 
     /// The ClientBio version of the Ssl::Bio::stateChanged method
     /// When the client hello message retrieved, fill the
@@ -150,18 +148,19 @@ public:
     virtual int read(char *buf, int size, BIO *table);
     /// Return true if the client hello message received and analized
     bool gotHello() { return (helloState == atHelloReceived); }
+    /// Return the SSL features requested by SSL client
+    const Bio::sslFeatures &getFeatures() const {return features;}
     /// Prevents or allow writting on socket.
     void hold(bool h) {holdRead_ = holdWrite_ = h;}
-    /// True if client does not looks like an SSL client
-    bool noSslClient() {return wrongProtocol;}
+
 private:
     /// True if the SSL state corresponds to a hello message
     bool isClientHello(int state);
+    /// The futures retrieved from client SSL hello message
+    Bio::sslFeatures features;
     bool holdRead_; ///< The read hold state of the bio.
     bool holdWrite_;  ///< The write hold state of the bio.
     HelloReadState helloState; ///< The SSL hello read state
-    int helloSize; ///< The SSL hello message sent by client size
-    bool wrongProtocol; ///< true if client SSL hello parsing failed
 };
 
 /// BIO node to handle socket IO for squid server side
@@ -199,10 +198,6 @@ public:
     /// Sets the random number to use in client SSL HELLO message
     void setClientFeatures(const sslFeatures &features);
 
-    /// Parses server Hello message if it is recorded and extracts
-    /// server-supported features.
-    void extractHelloFeatures();
-
     bool resumingSession();
     /// The write hold state
     bool holdWrite() const {return holdWrite_;}
@@ -219,6 +214,7 @@ public:
     Ssl::BumpMode bumpMode() {return bumpMode_;} ///< return the bumping mode
 private:
     sslFeatures clientFeatures; ///< SSL client features extracted from ClientHello message or SSL object
+    sslFeatures serverFeatures; ///< SSL server features extracted from ServerHello message
     SBuf helloMsg; ///< Used to buffer output data.
     mb_size_t  helloMsgSize;
     bool helloBuild; ///< True if the client hello message sent to the server

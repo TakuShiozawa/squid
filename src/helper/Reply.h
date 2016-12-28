@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -33,7 +33,7 @@ private:
     Reply &operator =(const Helper::Reply &r);
 
 public:
-    explicit Reply(Helper::ResultCode res = Helper::Unknown) : result(res), notes(), whichServer(NULL) {
+    Reply() : result(Helper::Unknown), notes(), whichServer(NULL) {
         other_.init(1,1);
         other_.terminate();
     }

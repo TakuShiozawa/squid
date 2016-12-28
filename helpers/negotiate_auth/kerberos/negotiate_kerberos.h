@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -111,7 +111,7 @@ extern "C" {
 #define MAX_AUTHTOKEN_LEN   65535
 #endif
 #ifndef SQUID_KERB_AUTH_VERSION
-#define SQUID_KERB_AUTH_VERSION "3.1.0sq"
+#define SQUID_KERB_AUTH_VERSION "3.0.4sq"
 #endif
 
 char *gethost_name(void);

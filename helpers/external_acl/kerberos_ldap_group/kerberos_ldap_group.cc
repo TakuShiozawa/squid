@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -45,23 +45,6 @@
 #include "support.h"
 #include <cctype>
 
-#if HAVE_KRB5
-struct kstruct kparam;
-
-#if !HAVE_ERROR_MESSAGE && HAVE_KRB5_GET_ERROR_MESSAGE
-#define error_message(code) krb5_get_error_message(kparam.context,code)
-#elif !HAVE_ERROR_MESSAGE && HAVE_KRB5_GET_ERR_TEXT
-#define error_message(code) krb5_get_err_text(kparam.context,code)
-#elif !HAVE_ERROR_MESSAGE
-static char err_code[17];
-const char *KRB5_CALLCONV
-error_message(long code) {
-    snprintf(err_code,16,"%ld",code);
-    return err_code;
-}
-#endif
-#endif /* HAVE_KRB5 */
-
 void
 init_args(struct main_args *margs)
 {
@@ -78,7 +61,6 @@ init_args(struct main_args *margs)
     margs->rc_allow = 0;
     margs->AD = 0;
     margs->mdepth = 5;
-    margs->nokerberos = 0;
     margs->ddomain = NULL;
     margs->groups = NULL;
     margs->ndoms = NULL;
@@ -191,18 +173,13 @@ main(int argc, char *const argv[])
     char *nuser, *nuser8 = NULL, *netbios;
     int opt;
     struct main_args margs;
-#if HAVE_KRB5
-    krb5_error_code code = 0;
-
-    kparam.context = NULL;
-#endif
 
     setbuf(stdout, NULL);
     setbuf(stdin, NULL);
 
     init_args(&margs);
 
-    while (-1 != (opt = getopt(argc, argv, "diasng:D:N:S:u:U:t:T:p:l:b:m:h"))) {
+    while (-1 != (opt = getopt(argc, argv, "diasg:D:N:S:u:U:t:T:p:l:b:m:h"))) {
         switch (opt) {
         case 'd':
             debug_enabled = 1;
@@ -215,9 +192,6 @@ main(int argc, char *const argv[])
             break;
         case 's':
             margs.ssl = (char *) "yes";
-            break;
-        case 'n':
-            margs.nokerberos = 1;
             break;
         case 'g':
             margs.glist = xstrdup(optarg);
@@ -262,10 +236,9 @@ main(int argc, char *const argv[])
             fprintf(stderr, "squid_kerb_ldap [-d] [-i] -g group list [-D domain] [-N netbios domain map] [-s] [-u ldap user] [-p ldap user password] [-l ldap url] [-b ldap bind path] [-a] [-m max depth] [-h]\n");
             fprintf(stderr, "-d full debug\n");
             fprintf(stderr, "-i informational messages\n");
-            fprintf(stderr, "-n do not use Kerberos to authenticate to AD. Requires -u , -p and -l option\n");
             fprintf(stderr, "-g group list\n");
             fprintf(stderr, "-t group list (only group name hex UTF-8 format)\n");
-            fprintf(stderr, "-T group list (all in hex UTF-8 format - except separator @)\n");
+            fprintf(stderr, "-T group list (all in hex UTF-8 format - except seperator @)\n");
             fprintf(stderr, "-D default domain\n");
             fprintf(stderr, "-N netbios to dns domain map\n");
             fprintf(stderr, "-S ldap server to dns domain map\n");
@@ -285,7 +258,7 @@ main(int argc, char *const argv[])
             fprintf(stderr, "group   - In this case group can be used for all keberised and non kerberised ldap servers\n");
             fprintf(stderr, "group@  - In this case group can be used for all keberised ldap servers\n");
             fprintf(stderr, "group@domain  - In this case group can be used for ldap servers of domain domain\n");
-            fprintf(stderr, "group1@domain1:group2@domain2:group3@:group4  - A list is build with a colon as separator\n");
+            fprintf(stderr, "group1@domain1:group2@domain2:group3@:group4  - A list is build with a colon as seperator\n");
             fprintf(stderr, "Group membership is determined with AD servers through the users memberof attribute which\n");
             fprintf(stderr, "is followed to the top (e.g. if the group is a member of a group)\n");
             fprintf(stderr, "Group membership is determined with non AD servers through the users memberuid (assuming\n");
@@ -294,7 +267,7 @@ main(int argc, char *const argv[])
             fprintf(stderr, "server - In this case server can be used for all Kerberos domains\n");
             fprintf(stderr, "server@  - In this case server can be used for all Kerberos domains\n");
             fprintf(stderr, "server@domain  - In this case server can be used for Kerberos domain domain\n");
-            fprintf(stderr, "server1a@domain1:server1b@domain1:server2@domain2:server3@:server4 - A list is build with a colon as separator\n");
+            fprintf(stderr, "server1a@domain1:server1b@domain1:server2@domain2:server3@:server4 - A list is build with a colon as seperator\n");
             clean_args(&margs);
             exit(0);
         default:
@@ -307,7 +280,7 @@ main(int argc, char *const argv[])
     if (create_gd(&margs)) {
         if ( margs.glist != NULL ) {
             debug((char *) "%s| %s: FATAL: Error in group list: %s\n", LogTime(), PROGRAM, margs.glist ? margs.glist : "NULL");
-            SEND_BH("");
+            SEND_ERR("");
             clean_args(&margs);
             exit(1);
         } else {
@@ -317,36 +290,16 @@ main(int argc, char *const argv[])
     }
     if (create_nd(&margs)) {
         debug((char *) "%s| %s: FATAL: Error in netbios list: %s\n", LogTime(), PROGRAM, margs.nlist ? margs.nlist : "NULL");
-        SEND_BH("");
+        SEND_ERR("");
         clean_args(&margs);
         exit(1);
     }
     if (create_ls(&margs)) {
         debug((char *) "%s| %s: Error in ldap server list: %s\n", LogTime(), PROGRAM, margs.llist ? margs.llist : "NULL");
-        SEND_BH("");
+        SEND_ERR("");
         clean_args(&margs);
         exit(1);
     }
-
-#if HAVE_KRB5
-    /*
-     * Initialise Kerberos
-     */
-
-    code = krb5_init_context(&kparam.context);
-    for (int i=0; i<MAX_DOMAINS; i++) {
-        kparam.mem_ccache[i]=NULL;
-        kparam.cc[i]=NULL;
-        kparam.ncache=0;
-    }
-    if (code) {
-        error((char *) "%s| %s: ERROR: Error while initialising Kerberos library : %s\n", LogTime(), PROGRAM, error_message(code));
-        SEND_BH("");
-        clean_args(&margs);
-        exit(1);
-    }
-#endif
-
     while (1) {
         char *c;
         if (fgets(buf, sizeof(buf) - 1, stdin) == NULL) {
@@ -354,25 +307,19 @@ main(int argc, char *const argv[])
                 debug((char *) "%s| %s: FATAL: fgets() failed! dying..... errno=%d (%s)\n", LogTime(), PROGRAM, ferror(stdin),
                       strerror(ferror(stdin)));
 
-                SEND_BH(strerror(ferror(stdin)));
+                SEND_ERR("");
                 clean_args(&margs);
-#if HAVE_KRB5
-                krb5_cleanup();
-#endif
                 exit(1);    /* BIIG buffer */
             }
-            SEND_BH("fgets NULL");
+            SEND_ERR("");
             clean_args(&margs);
-#if HAVE_KRB5
-            krb5_cleanup();
-#endif
             exit(0);
         }
         c = (char *) memchr(buf, '\n', sizeof(buf) - 1);
         if (c) {
             *c = '\0';
         } else {
-            SEND_BH("Invalid input. CR missing");
+            SEND_ERR("Invalid input. CR missing");
             debug((char *) "%s| %s: ERR\n", LogTime(), PROGRAM);
             continue;
         }
@@ -380,7 +327,7 @@ main(int argc, char *const argv[])
         user = strtok(buf, " \n");
         if (!user) {
             debug((char *) "%s| %s: INFO: No Username given\n", LogTime(), PROGRAM);
-            SEND_BH("Invalid request. No Username");
+            SEND_ERR("Invalid request. No Username");
             continue;
         }
         rfc1738_unescape(user);
@@ -434,10 +381,6 @@ main(int argc, char *const argv[])
         safe_free(dp);
         if (!strcmp(user, "QQ") && domain && !strcmp(domain, "QQ")) {
             clean_args(&margs);
-#if HAVE_KRB5
-            krb5_cleanup();
-#endif
-
             exit(-1);
         }
         if (gopt) {
@@ -450,12 +393,12 @@ main(int argc, char *const argv[])
                 }
                 margs.glist = xstrdup(group);
                 if (create_gd(&margs)) {
-                    SEND_BH("Error in group list");
+                    SEND_ERR("Error in group list");
                     debug((char *) "%s| %s: FATAL: Error in group list: %s\n", LogTime(), PROGRAM, margs.glist ? margs.glist : "NULL");
                     continue;
                 }
             } else {
-                SEND_BH("No group list received on stdin");
+                SEND_ERR("No group list received on stdin");
                 debug((char *) "%s| %s: FATAL: No group list received on stdin\n", LogTime(), PROGRAM);
                 continue;
             }

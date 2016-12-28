@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -163,19 +163,6 @@ public:
     // for ACL::checklistMatches to use
     virtual bool hasRequest() const = 0;
     virtual bool hasReply() const = 0;
-    virtual bool hasAle() const = 0;
-    virtual void syncAle() const = 0;
-
-    /// change the current ACL list
-    /// \return a pointer to the old list value (may be nullptr)
-    const Acl::Tree *changeAcl(const Acl::Tree *t) {
-        const Acl::Tree *old = accessList;
-        if (t != accessList) {
-            cbdataReferenceDone(accessList);
-            accessList = cbdataReference(t);
-        }
-        return old;
-    }
 
 private:
     /// Calls non-blocking check callback with the answer and destroys self.
@@ -186,8 +173,8 @@ private:
     void changeState(AsyncState *);
     AsyncState *asyncState() const;
 
-    const Acl::Tree *accessList;
 public:
+    const Acl::Tree *accessList;
 
     ACLCB *callback;
     void *callback_data;

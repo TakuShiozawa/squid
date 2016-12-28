@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -168,10 +168,23 @@ MemStore::reference(StoreEntry &)
 }
 
 bool
-MemStore::dereference(StoreEntry &)
+MemStore::dereference(StoreEntry &, bool)
 {
     // no need to keep e in the global store_table for us; we have our own map
     return false;
+}
+
+int
+MemStore::callback()
+{
+    return 0;
+}
+
+StoreSearch *
+MemStore::search(String const, HttpRequest *)
+{
+    fatal("not implemented");
+    return NULL;
 }
 
 StoreEntry *
@@ -205,6 +218,13 @@ MemStore::get(const cache_key *key)
     debugs(20, 3, HERE << "mem-loading failed; freeing " << index);
     map->freeEntry(index); // do not let others into the same trap
     return NULL;
+}
+
+void
+MemStore::get(String const key, STOREGETCLIENT aCallback, void *aCallbackData)
+{
+    // XXX: not needed but Store parent forces us to implement this
+    fatal("MemStore::get(key,callback,data) should not be called");
 }
 
 bool
@@ -261,7 +281,7 @@ MemStore::anchorEntry(StoreEntry &e, const sfileno index, const Ipc::StoreMapAnc
     e.lastref = basics.lastref;
     e.timestamp = basics.timestamp;
     e.expires = basics.expires;
-    e.lastmod = basics.lastmod;
+    e.lastModified(basics.lastmod);
     e.refcount = basics.refcount;
     e.flags = basics.flags;
 
@@ -423,7 +443,7 @@ MemStore::shouldCache(StoreEntry &e) const
 
     assert(e.mem_obj);
 
-    if (e.mem_obj->vary_headers) {
+    if (!e.mem_obj->vary_headers.isEmpty()) {
         // XXX: We must store/load SerialisedMetaData to cache Vary in RAM
         debugs(20, 5, "Vary not yet supported: " << e.mem_obj->vary_headers);
         return false;
@@ -781,8 +801,12 @@ MemStoreRr::finalizeConfig()
 {
     // decide whether to use a shared memory cache if the user did not specify
     if (!Config.memShared.configured()) {
-        Config.memShared.configure(Ipc::Mem::Segment::Enabled() && UsingSmp() &&
+        Config.memShared.configure(Ipc::Atomic::Enabled() &&
+                                   Ipc::Mem::Segment::Enabled() && UsingSmp() &&
                                    Config.memMaxSize > 0);
+    } else if (Config.memShared && !Ipc::Atomic::Enabled()) {
+        // bail if the user wants shared memory cache but we cannot support it
+        fatal("memory_cache_shared is on, but no support for atomic operations detected");
     } else if (Config.memShared && !Ipc::Mem::Segment::Enabled()) {
         fatal("memory_cache_shared is on, but no support for shared memory detected");
     } else if (Config.memShared && !UsingSmp()) {

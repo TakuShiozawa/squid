@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -30,12 +30,6 @@ SQUIDCEXTERN int debug_enabled;
                          fprintf(stderr, "%s(%d): pid=%ld :", __FILE__, __LINE__, (long)getpid() ); \
                          fprintf(stderr,X); \
                      } else (void)0
-
-#define ndebug(content) ndebug_(__FILE__, __LINE__, content)
-#define ndebug_(file, line, content) if (debug_enabled) { \
-    std::cerr << file << '(' << line << ')' << ": pid=" << getpid() << ':' \
-        << content << std::endl; \
-    } else (void)0
 
 #else /* __GNUC__ */
 

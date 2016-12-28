@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,14 +13,14 @@
 #include "globals.h"
 #include "HttpHeader.h"
 #include "HttpReply.h"
+#include "Mem.h"
 #include "MemObject.h"
 #include "RequestFlags.h"
 #include "SquidConfig.h"
 #include "Store.h"
-#include "store/Disk.h"
-#include "store/Disks.h"
 #include "StoreFileSystem.h"
 #include "StoreSearch.h"
+#include "SwapDir.h"
 #include "testRock.h"
 #include "testStoreSupport.h"
 #include "unitTestMain.h"
@@ -33,7 +33,7 @@
 #include <unistd.h>
 #endif
 
-#define TESTDIR "testRock_Store"
+#define TESTDIR "tr"
 
 CPPUNIT_TEST_SUITE_REGISTRATION( testRock );
 
@@ -62,7 +62,7 @@ testRock::setUp()
     if (Ipc::Mem::Segment::BasePath == NULL)
         Ipc::Mem::Segment::BasePath = ".";
 
-    Store::Init();
+    Store::Root(new StoreController);
 
     store = new Rock::SwapDir();
 
@@ -95,7 +95,7 @@ testRock::tearDown()
 {
     CPPUNIT_NS::TestFixture::tearDown();
 
-    Store::FreeMemory();
+    Store::Root(NULL);
 
     store = NULL;
 
@@ -142,8 +142,6 @@ testRock::commonInit()
     comm_init();
 
     httpHeaderInitModule(); /* must go before any header processing (e.g. the one in errorInitialize) */
-
-    httpReplyInitModule();  /* must go before accepting replies */
 
     mem_policy = createRemovalPolicy(Config.replPolicy);
 
@@ -202,7 +200,14 @@ testRock::addEntry(const int i)
     StoreEntry *const pe = createEntry(i);
 
     pe->buffer();
-    pe->getReply()->packHeadersInto(pe);
+    /* TODO: remove this when the metadata is separated */
+    {
+        Packer p;
+        packerToStoreInit(&p, pe);
+        pe->getReply()->packHeadersInto(&p);
+        packerClean(&p);
+    }
+
     pe->flush();
     pe->timestampsSet();
     pe->complete();

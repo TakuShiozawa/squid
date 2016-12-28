@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -13,7 +13,6 @@
 #include "comm/Loops.h"
 #include "defines.h"
 #include "fd.h"
-#include "icmp/IcmpConfig.h"
 #include "icmp/IcmpSquid.h"
 #include "icmp/net_db.h"
 #include "ip/tools.h"
@@ -194,7 +193,7 @@ IcmpSquid::Open(void)
     Ip::Address localhost;
 
     /* User configured disabled. */
-    if (!IcmpCfg.enable) {
+    if (!Config.pinger.enable) {
         Close();
         return -1;
     }
@@ -209,7 +208,7 @@ IcmpSquid::Open(void)
      * least on FreeBSD).
      */
     pid = ipcCreate(IPC_UDP_SOCKET,
-                    IcmpCfg.program.c_str(),
+                    Config.pinger.program,
                     args,
                     "Pinger Socket",
                     localhost,

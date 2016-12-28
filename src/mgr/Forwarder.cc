@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -86,7 +86,7 @@ Mgr::Forwarder::handleTimeout()
 }
 
 void
-Mgr::Forwarder::handleException(const std::exception &e)
+Mgr::Forwarder::handleException(const std::exception& e)
 {
     if (entry != NULL && httpRequest != NULL && Comm::IsConnOpen(conn))
         sendError(new ErrorState(ERR_INVALID_RESP, Http::scInternalServerError, httpRequest));
@@ -95,7 +95,7 @@ Mgr::Forwarder::handleException(const std::exception &e)
 
 /// called when the client socket gets closed by some external force
 void
-Mgr::Forwarder::noteCommClosed(const CommCloseCbParams &)
+Mgr::Forwarder::noteCommClosed(const CommCloseCbParams& params)
 {
     debugs(16, 5, HERE);
     conn = NULL; // needed?

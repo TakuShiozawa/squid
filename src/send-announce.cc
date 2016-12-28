@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -11,10 +11,10 @@
 #include "squid.h"
 #include "anyp/PortCfg.h"
 #include "comm/Connection.h"
+#include "disk.h"
 #include "event.h"
 #include "fd.h"
 #include "fde.h"
-#include "fs_io.h"
 #include "globals.h"
 #include "ICP.h"
 #include "ipcache.h"
@@ -25,7 +25,7 @@
 static IPH send_announce;
 
 void
-start_announce(void *)
+start_announce(void *datanotused)
 {
     if (0 == Config.onoff.announce)
         return;
@@ -39,7 +39,7 @@ start_announce(void *)
 }
 
 static void
-send_announce(const ipcache_addrs *ia, const Dns::LookupDetails &, void *)
+send_announce(const ipcache_addrs *ia, const DnsLookupDetails &, void *junk)
 {
     LOCAL_ARRAY(char, tbuf, 256);
     LOCAL_ARRAY(char, sndbuf, BUFSIZ);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -12,11 +12,13 @@
 #include "acl/Acl.h"
 #include "acl/Checklist.h"
 
+/// \ingroup ACLAPI
 class ACLRandom : public ACL
 {
-    MEMPROXY_CLASS(ACLRandom);
 
 public:
+    MEMPROXY_CLASS(ACLRandom);
+
     ACLRandom(char const *);
     ACLRandom(ACLRandom const &);
     ~ACLRandom();
@@ -37,6 +39,8 @@ protected:
     char pattern[256];  // pattern from config file. Used to generate 'data'
     char const *class_;
 };
+
+MEMPROXY_CLASS_INLINE(ACLRandom);
 
 #endif /* SQUID_ACL_RANDOM_H */
 

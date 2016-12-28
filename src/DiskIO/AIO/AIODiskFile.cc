@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -21,13 +21,12 @@
  */
 
 #include "squid.h"
-#include "Debug.h"
-#include "DiskIO/AIO/AIODiskFile.h"
-#include "DiskIO/AIO/AIODiskIOStrategy.h"
+#include "AIODiskFile.h"
+#include "AIODiskIOStrategy.h"
+#include "disk.h"
 #include "DiskIO/IORequestor.h"
 #include "DiskIO/ReadRequest.h"
 #include "DiskIO/WriteRequest.h"
-#include "fs_io.h"
 #include "globals.h"
 
 #include <cerrno>
@@ -52,7 +51,7 @@ AIODiskFile::error(bool const &aBool)
 }
 
 void
-AIODiskFile::open(int flags, mode_t, RefCount<IORequestor> callback)
+AIODiskFile::open(int flags, mode_t mode, RefCount<IORequestor> callback)
 {
     /* Simulate async calls */
 #if _SQUID_WINDOWS_

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2015 The Squid Software Foundation and contributors
+ * Copyright (C) 1996-2016 The Squid Software Foundation and contributors
  *
  * Squid software is distributed under GPLv2+ license and includes
  * contributions from numerous individuals and organizations.
@@ -10,7 +10,7 @@
 
 #include "squid.h"
 #include "Debug.h"
-#include "http/one/Parser.h"
+#include "HttpHdrCc.h"
 #include "HttpHeaderTools.h"
 #include "HttpMsg.h"
 #include "MemBuf.h"
@@ -18,18 +18,33 @@
 #include "profiler/Profiler.h"
 #include "SquidConfig.h"
 
-HttpMsg::HttpMsg(http_hdr_owner_type owner):
-    http_ver(Http::ProtocolVersion()),
-    header(owner),
-    cache_control(NULL),
-    hdr_sz(0),
-    content_length(0),
+HttpMsg::HttpMsg(http_hdr_owner_type owner): header(owner),
+    cache_control(NULL), hdr_sz(0), content_length(0),
     pstate(psReadyToParseStartLine)
 {}
 
 HttpMsg::~HttpMsg()
 {
     assert(!body_pipe);
+}
+
+void
+HttpMsg::putCc(const HttpHdrCc *otherCc)
+{
+    // get rid of the old CC, if any
+    if (cache_control) {
+        delete cache_control;
+        cache_control = NULL;
+        if (!otherCc)
+            header.delById(HDR_CACHE_CONTROL);
+        // else it will be deleted inside putCc() below
+    }
+
+    // add new CC, if any
+    if (otherCc) {
+        cache_control = new HttpHdrCc(*otherCc);
+        header.putCc(cache_control);
+    }
 }
 
 HttpMsgParseState &operator++ (HttpMsgParseState &aState)
@@ -40,7 +55,7 @@ HttpMsgParseState &operator++ (HttpMsgParseState &aState)
 }
 
 /* find end of headers */
-static int
+int
 httpMsgIsolateHeaders(const char **parse_start, int l, const char **blk_start, const char **blk_end)
 {
     /*
@@ -126,13 +141,16 @@ httpMsgIsolateStart(const char **parse_start, const char **blk_start, const char
 // zero return means need more data
 // positive return is the size of parsed headers
 bool
-HttpMsg::parse(const char *buf, const size_t sz, bool eof, Http::StatusCode *error)
+HttpMsg::parse(MemBuf *buf, bool eof, Http::StatusCode *error)
 {
     assert(error);
     *error = Http::scNone;
 
+    // httpMsgParseStep() and debugging require 0-termination, unfortunately
+    buf->terminate(); // does not affect content size
+
     // find the end of headers
-    const size_t hdr_len = headersEnd(buf, sz);
+    const size_t hdr_len = headersEnd(buf->content(), buf->contentSize());
 
     // sanity check the start line to see if this is in fact an HTTP message
     if (!sanityCheckStartLine(buf, hdr_len, error)) {
@@ -144,14 +162,15 @@ HttpMsg::parse(const char *buf, const size_t sz, bool eof, Http::StatusCode *err
         return false;
     }
 
-    if (hdr_len > Config.maxReplyHeaderSize || (hdr_len <= 0 && sz > Config.maxReplyHeaderSize)) {
+    // TODO: move to httpReplyParseStep()
+    if (hdr_len > Config.maxReplyHeaderSize || (hdr_len <= 0 && (size_t)buf->contentSize() > Config.maxReplyHeaderSize)) {
         debugs(58, DBG_IMPORTANT, "HttpMsg::parse: Too large reply header (" << hdr_len << " > " << Config.maxReplyHeaderSize);
         *error = Http::scHeaderTooLarge;
         return false;
     }
 
     if (hdr_len <= 0) {
-        debugs(58, 3, "HttpMsg::parse: failed to find end of headers (eof: " << eof << ") in '" << buf << "'");
+        debugs(58, 3, "HttpMsg::parse: failed to find end of headers (eof: " << eof << ") in '" << buf->content() << "'");
 
         if (eof) // iff we have seen the end, this is an error
             *error = Http::scInvalidHeader;
@@ -159,22 +178,22 @@ HttpMsg::parse(const char *buf, const size_t sz, bool eof, Http::StatusCode *err
         return false;
     }
 
-    const int res = httpMsgParseStep(buf, sz, eof);
+    const int res = httpMsgParseStep(buf->content(), buf->contentSize(), eof);
 
     if (res < 0) { // error
-        debugs(58, 3, "HttpMsg::parse: cannot parse isolated headers in '" << buf << "'");
+        debugs(58, 3, "HttpMsg::parse: cannot parse isolated headers in '" << buf->content() << "'");
         *error = Http::scInvalidHeader;
         return false;
     }
 
     if (res == 0) {
-        debugs(58, 2, "HttpMsg::parse: strange, need more data near '" << buf << "'");
+        debugs(58, 2, "HttpMsg::parse: strange, need more data near '" << buf->content() << "'");
         *error = Http::scInvalidHeader;
         return false; // but this should not happen due to headersEnd() above
     }
 
     assert(res > 0);
-    debugs(58, 9, "HttpMsg::parse success (" << hdr_len << " bytes) near '" << buf << "'");
+    debugs(58, 9, "HttpMsg::parse success (" << hdr_len << " bytes) near '" << buf->content() << "'");
 
     if (hdr_sz != (int)hdr_len) {
         debugs(58, DBG_IMPORTANT, "internal HttpMsg::parse vs. headersEnd error: " <<
@@ -256,15 +275,14 @@ HttpMsg::httpMsgParseStep(const char *buf, int len, int atEnd)
     if (pstate == psReadyToParseHeaders) {
         if (!httpMsgIsolateHeaders(&parse_start, parse_len, &blk_start, &blk_end)) {
             if (atEnd) {
-                blk_start = parse_start;
-                blk_end = blk_start + strlen(blk_start);
+                blk_start = parse_start, blk_end = blk_start + strlen(blk_start);
             } else {
                 PROF_stop(HttpMsg_httpMsgParseStep);
                 return 0;
             }
         }
 
-        if (!header.parse(blk_start, blk_end-blk_start)) {
+        if (!header.parse(blk_start, blk_end)) {
             PROF_stop(HttpMsg_httpMsgParseStep);
             return httpMsgParseError();
         }
@@ -282,22 +300,6 @@ HttpMsg::httpMsgParseStep(const char *buf, int len, int atEnd)
     return 1;
 }
 
-bool
-HttpMsg::parseHeader(Http1::Parser &hp)
-{
-    // HTTP/1 message contains "zero or more header fields"
-    // zero does not need parsing
-    // XXX: c_str() reallocates. performance regression.
-    if (hp.headerBlockSize() && !header.parse(hp.mimeHeader().c_str(), hp.headerBlockSize())) {
-        pstate = psError;
-        return false;
-    }
-
-    pstate = psParsed;
-    hdrCacheInit();
-    return true;
-}
-
 /* handy: resets and returns -1 */
 int
 HttpMsg::httpMsgParseError()
@@ -309,15 +311,15 @@ HttpMsg::httpMsgParseError()
 void
 HttpMsg::setContentLength(int64_t clen)
 {
-    header.delById(Http::HdrType::CONTENT_LENGTH); // if any
-    header.putInt64(Http::HdrType::CONTENT_LENGTH, clen);
+    header.delById(HDR_CONTENT_LENGTH); // if any
+    header.putInt64(HDR_CONTENT_LENGTH, clen);
     content_length = clen;
 }
 
 bool
 HttpMsg::persistent() const
 {
-    if (http_ver > Http::ProtocolVersion(1,0)) {
+    if (http_ver > Http::ProtocolVersion(1, 0)) {
         /*
          * for modern versions of HTTP: persistent unless there is
          * a "Connection: close" header.
@@ -329,16 +331,16 @@ HttpMsg::persistent() const
     }
 }
 
-void HttpMsg::packInto(Packable *p, bool full_uri) const
+void HttpMsg::packInto(Packer *p, bool full_uri) const
 {
     packFirstLineInto(p, full_uri);
     header.packInto(p);
-    p->append("\r\n", 2);
+    packerAppend(p, "\r\n", 2);
 }
 
 void HttpMsg::hdrCacheInit()
 {
-    content_length = header.getInt64(Http::HdrType::CONTENT_LENGTH);
+    content_length = header.getInt64(HDR_CONTENT_LENGTH);
     assert(NULL == cache_control);
     cache_control = header.getCc();
 }
@@ -348,6 +350,9 @@ void HttpMsg::hdrCacheInit()
  */
 void HttpMsg::firstLineBuf(MemBuf& mb)
 {
-    packFirstLineInto(&mb, true);
+    Packer p;
+    packerToMemInit(&p, &mb);
+    packFirstLineInto(&p, true);
+    packerClean(&p);
 }
 
